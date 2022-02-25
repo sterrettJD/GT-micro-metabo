@@ -15,7 +15,7 @@ grid.newpage()
 
 draw.pairwise.venn(area1=432, area2=192, cross.area=0,
                    category=c("Lipids","Aqueous"),
-                   fill=c("Yellow","Blue"))
+                   fill=c("Yellow","Light Blue"))
 
 # Lipids venn diagram
 # tbh I just ripped this off https://stackoverflow.com/questions/42264951/how-to-adjust-the-position-of-circles-when-plotting-venn-diagram
@@ -46,7 +46,7 @@ r3 = round(sqrt(area3/pi))
 xc = round(sqrt(area1/pi))
 yc =round(sqrt(area1/pi))
 plot(0:32,0:32,type="n",xlab="",ylab="",main="Aqueous compounds", xaxt='n', yaxt='n')
-draw.circle(xc+r1,yc+r1,r1,border="black", col="Yellow",lty=1,lwd=1)
+draw.circle(xc+r1,yc+r1,r1,border="black", col="Light blue",lty=1,lwd=1)
 draw.circle(xc+2*r1-r2,yc+r1,r2,border="black", col="White",lty=1,lwd=1)
 draw.circle(xc+2*r1-r3,yc+r1,r3, border="black", col="Grey", lty=1, lwd=1)
 text(xc+(r1-r2)/2+1,yc+r1, area1, cex=4) 
