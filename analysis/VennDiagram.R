@@ -7,13 +7,13 @@ library(plotrix)
 grid.newpage()
 
 # create Venn diagram with four sets
-draw.pairwise.venn(area1=5000, area2=4000, cross.area=432+192,
+draw.pairwise.venn(area1=4415, area2=4282, cross.area=432+192, cex = 3, cat.cex = 2, cat.dist = -0.08,
                category=c("Green Tea","Plasma"),
                fill=c("Green","Red"))
 #new page
 grid.newpage()
 
-draw.pairwise.venn(area1=432, area2=192, cross.area=0,
+draw.pairwise.venn(area1=432, area2=192, cross.area=0, cex=3, cat.cex = 2, cat.dist = -0.055,
                    category=c("Lipids","Aqueous"),
                    fill=c("Yellow","Light Blue"))
 
