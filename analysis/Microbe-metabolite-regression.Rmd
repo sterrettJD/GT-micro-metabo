@@ -1,0 +1,24 @@
+---
+title: "Microbe-metabolite regression analysis"
+author: "John Sterrett"
+date: '2022-07-14'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse,
+               lme4, lmerTest,
+               qiime2R,
+               data.table)
+
+```
+
+# Load data
+
+```{r}
+
+
+```
+l
