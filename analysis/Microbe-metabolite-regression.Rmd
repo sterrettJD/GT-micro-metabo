@@ -28,7 +28,7 @@ genus <- sapply(genus,
 genus <- genus %>% as.data.frame(row.names = genus_names)
 
 # check that all colsums are 100
-colSums(genus)
+unique(colSums(genus))
 
 genus <- t(genus) %>% as.data.frame()
 
@@ -73,4 +73,12 @@ for (i in 1:length(new_genus_sample_ids)){
 }
 
 rownames(genus) <- new_genus_sample_ids
+```
+
+
+# Transform data
+```{r}
+
+
+
 ```
