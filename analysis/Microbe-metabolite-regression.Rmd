@@ -12,13 +12,65 @@ pacman::p_load(tidyverse,
                lme4, lmerTest,
                qiime2R,
                data.table)
-
+setwd("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis")
 ```
 
 # Load data
 
 ```{r}
+# read in genus level table
+genus <- read_qza("../microbiome/L6-collapsed-table.qza")$data %>% as.data.frame()
+genus_names <- row.names(genus)
+
+# convert to relative abundance
+genus <- sapply(genus,
+                prop.table) * 100
+genus <- genus %>% as.data.frame(row.names = genus_names)
+
+# check that all colsums are 100
+colSums(genus)
+
+genus <- t(genus) %>% as.data.frame()
+
+rownames(genus)
 
 
+# read in metadata
+metadata <- fread("../metadata/mapping.tsv", sep = "\t")
+rownames(metadata) <- metadata$`MetaboSampleID`
+
+# read in metabolites
+aqueous <- fread("../metabolome/raw_aqueous.tsv",
+                 sep="\t", header = T) %>% as.data.frame()
+row.names(aqueous) <- aqueous$V1
+aqueous$V1 <- NULL
+
+# only include raw data, not log transformed
+# raw_indexes <- names(aqueous)[which(grepl("raw", names(aqueous)))]
+# aqueous <- aqueous[,names(aqueous) %in% raw_indexes]
+
+
+
+
+# read in lipids
+lipids <- fread("../metabolome/raw_lipid.tsv",
+                sep="\t",
+                header = T)
+
+row.names(lipids) <- lipids$V1
+lipids$V1 <- NULL
+
+# map genus sample ids to metabolomics sample ids
+new_genus_sample_ids <- c()
+for (x in row.names(genus)){
+    sampleid <- metadata[metadata$`#SampleID`==x, "MetaboSampleID"][[1,1]]
+    new_genus_sample_ids <- c(new_genus_sample_ids, sampleid)
+}
+
+for (i in 1:length(new_genus_sample_ids)){
+    print(paste0("Mapping ", rownames(genus)[i], 
+                 " to ", new_genus_sample_ids[i]))
+}
+
+rownames(genus) <- new_genus_sample_ids
 ```
-l
