@@ -12,7 +12,12 @@ pacman::p_load(tidyverse,
                lme4, lmerTest,
                qiime2R,
                data.table)
+
+'%ni%' <- Negate('%in%')
+
 setwd("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis")
+
+
 ```
 
 # Load data
@@ -45,11 +50,12 @@ aqueous <- fread("../metabolome/raw_aqueous.tsv",
 row.names(aqueous) <- aqueous$V1
 aqueous$V1 <- NULL
 
-# only include raw data, not log transformed
-# raw_indexes <- names(aqueous)[which(grepl("raw", names(aqueous)))]
-# aqueous <- aqueous[,names(aqueous) %in% raw_indexes]
-
-
+aqueous <- aqueous[rownames(aqueous) %ni% c("Compound Name", "Retention Time",
+                                          "Measured Retention Time", "Product Mass",
+                                         "QualifierMass", "CASNumber",
+                                         "CompoundType", "ISTDCompoundName", 
+                                         "Mass Column"),]
+aqueous <- mutate_all(aqueous, function(x) as.numeric(as.character(x)))
 
 
 # read in lipids
@@ -59,6 +65,13 @@ lipids <- fread("../metabolome/raw_lipid.tsv",
 
 row.names(lipids) <- lipids$V1
 lipids$V1 <- NULL
+
+lipids <- lipids[rownames(lipids) %ni% c("Compound Name", "Retention Time",
+                                          "Measured Retention Time", "Product Mass",
+                                         "QualifierMass", "CASNumber",
+                                         "CompoundType", "ISTDCompoundName", 
+                                         "Mass Column"),]
+lipids <- mutate_all(lipids, function(x) as.numeric(as.character(x)))
 
 # map genus sample ids to metabolomics sample ids
 new_genus_sample_ids <- c()
@@ -75,10 +88,32 @@ for (i in 1:length(new_genus_sample_ids)){
 rownames(genus) <- new_genus_sample_ids
 ```
 
-
 # Transform data
 ```{r}
+# hist before transformation
+hist(genus[, 1:3])
 
+# arcsinh transform microbiome data
+genus <- genus %>% mutate_all(function(x) log(x + sqrt(x^2 + 1)))
+
+# hist after transformation
+hist(genus[, 1:3])
+
+```
+
+
+
+# Assess sparsity
+```{r}
+# microbiome
+feature_sparsity <- genus %>% sapply(function(x) coop::sparsity(as.matrix(x)))
+hist(feature_sparsity, breaks=50)
+
+# aqueous
+
+feature_sparsity <- aqueous %>% sapply(function(x) coop::sparsity(as.matrix(x)))
+hist(feature_sparsity, breaks=50)
+unique(feature_sparsity)
 
 
 ```
