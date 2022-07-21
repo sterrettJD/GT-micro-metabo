@@ -252,7 +252,7 @@ summary(results_parallel)
 
 p values were false discovery rate (fdr) corrected via a benjamini-hochberg correction. A volcano plot shows beta (the regression coefficient) along the x axis and -log10(uncorrected p value) on the y axis.
 
-```{r lm_results, echo=F}
+```{r lm_results, echo=F, warning=F}
 results_dffilt <- results_parallel %>% 
     filter(max_influence < 4)
 
