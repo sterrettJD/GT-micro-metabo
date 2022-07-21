@@ -14,7 +14,8 @@ pacman::p_load(tidyverse,
                data.table,
                foreach,
                parallel,
-               doSNOW)
+               doSNOW,
+               ggrepel)
 
 '%ni%' <- Negate('%in%')
 
@@ -25,7 +26,7 @@ setwd("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis"
 
 # Load data
 
-```{r load_data}
+```{r load_data, echo=F}
 # read in genus level table
 genus <- read_qza("../microbiome/L6-collapsed-table.qza")$data %>% as.data.frame()
 genus_names <- row.names(genus)
@@ -36,6 +37,9 @@ genus <- sapply(genus,
 genus <- genus %>% as.data.frame(row.names = genus_names)
 
 # check that all colsums are 100
+print(
+    "Checking that all microbiome columns add to 100% (relative abundance)... All unique column sums are below (they should be 100): "
+)
 unique(colSums(genus))
 
 genus <- t(genus) %>% as.data.frame()
@@ -80,10 +84,10 @@ for (x in row.names(genus)){
     new_genus_sample_ids <- c(new_genus_sample_ids, sampleid)
 }
 
-for (i in 1:length(new_genus_sample_ids)){
-    print(paste0("Mapping ", rownames(genus)[i], 
-                 " to ", new_genus_sample_ids[i]))
-}
+# for (i in 1:length(new_genus_sample_ids)){
+#    print(paste0("Mapping ", rownames(genus)[i], 
+#                 " to ", new_genus_sample_ids[i]))
+#}
 
 rownames(genus) <- new_genus_sample_ids
 
@@ -95,41 +99,54 @@ rownames(genus) <- new_genus_sample_ids
 ```
 
 # Transform data
-```{r transform_data}
+```{r transform_data, echo=F}
 # hist before transformation
-hist(genus[, 1:3])
+print("Histograms before transformation")
+hist(genus[, 1:4])
 
 # arcsinh transform microbiome data
 genus <- genus %>% mutate_all(function(x) log(x + sqrt(x^2 + 1)))
 
 # hist after transformation
-hist(genus[, 1:3])
+print("Histograms after arcsinh transformation")
+hist(genus[, 1:4])
+
+
 
 ```
 
 
 
 # Assess sparsity
-```{r sparsity}
+```{r sparsity, echo=F}
 # microbiome
+print("Microbiome feature sparsity")
 feature_sparsity <- genus %>% sapply(function(x) coop::sparsity(as.matrix(x)))
 hist(feature_sparsity, breaks=10)
 
 # aqueous
+print("Aqueous metabolome feature sparsity")
 feature_sparsity <- aqueous %>% sapply(function(x) coop::sparsity(as.matrix(x)))
 hist(feature_sparsity, breaks=50)
+print("Unique sparsity values are: ")
 unique(feature_sparsity)
 
-
-# aqueous
+# lipids
+print("Lipidome feature sparsity")
 feature_sparsity <- lipids %>% sapply(function(x) coop::sparsity(as.matrix(x)))
 hist(feature_sparsity, breaks=50)
+print("Unique sparsity values are: ")
 unique(feature_sparsity)
 ```
 
 
 # Regressions
-```{r basic_regression, echo=FALSE}
+
+1. Scaled each metabolite to have a mean 0 and sd 1, so regression coefficients are comparable
+2. Ran regressions on each microbe-metabolite combination (metabolite ~ microbe)
+3. Extracted the regression coefficient, p value, and maximum influence of any sample on the regression
+
+```{r basic_regression, results='hide', echo=F}
 all_df <- cbind(genus, aqueous, lipids)
 metabo_df <- cbind(aqueous, lipids)
 
@@ -150,10 +167,15 @@ run_lm <- function(i, j){
                                 "new"]
     metabolite <- feat_name_mapped[feat_name_mapped$old==names(metabo_df)[j], 
                                    "new"]
+    # scale the metabolite so beta is interpretable
+    curr_lm_df <- lm_df[, c(microbe, metabolite)]
+    curr_lm_df[, metabolite] <- scale(curr_lm_df[, metabolite])
+    
     # create formula
     formula <- paste(metabolite, "~", microbe)
+    
     # run model
-    mod <- lm(formula, lm_df)
+    mod <- lm(formula, curr_lm_df)
     
     # extract p and beta
     p <- coef(summary(mod))[microbe,"Pr(>|t|)"]
@@ -202,7 +224,11 @@ print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
 stopCluster(cl)
 ```
 
-```{r process_and_summarize_results}
+# Assessing regression results
+
+First histogram shows the distribution of regression coefficients.
+Second histogram shows the distribution of maximum influence of any point for each regression. Then, the 50th, 90th, 95th, and 99th percentiles of the maximum influence values for each regression are printed. We will remove any regressions with maximum influence > 4.
+```{r process_and_summarize_results, echo=F}
 
 results_parallel$microbe <- unlist(y[1,])
 results_parallel$metabolite <- unlist(y[2,])
@@ -222,8 +248,11 @@ summary(results_parallel)
 ```
 
 
-# Assess regression results
-```{r lm_results}
+# Assess significant regressions
+
+p values were false discovery rate (fdr) corrected via a benjamini-hochberg correction. A volcano plot shows beta (the regression coefficient) along the x axis and -log10(uncorrected p value) on the y axis.
+
+```{r lm_results, echo=F}
 results_dffilt <- results_parallel %>% 
     filter(max_influence < 4)
 
@@ -238,13 +267,47 @@ results_dffilt$sig <- ifelse(test = results_dffilt$p > 0.05, # check baseline si
                                          yes = "p < 0.05",
                                          no = "fdr p < 0.05"))
 
-table(results_dffilt$sig)
+table(results_dffilt$sig) %>% knitr::kable(caption = "Significance levels for regressions")
 
-p <- ggplot(data=results_dffilt, aes(x=beta, y=-log10(p), col=sig)) + 
-    geom_point()
+
+volcano_df <- results_dffilt
+volcano_df$label <- NA
+
+volcano_df$annotated <- volcano_df$metabolite %>% 
+    sapply(function(x) !grepl("^[c][\\d]{2,}", 
+                              x, perl=T))
+volcano_df$metabolite[volcano_df$annotated==F] <- "unannotated"
+
+# create labels for the volcano plot
+volcano_df$intx<- paste(sapply(volcano_df$microbe, 
+                               function(x) str_split(x, "f_")[[1]][2]), 
+                        ":", 
+                        volcano_df$metabolite)
+
+volcano_df$label[
+    volcano_df$sig == "fdr p < 0.05"
+    ] <- volcano_df$intx[volcano_df$sig == "fdr p < 0.05"]
+
+# If label microbe was NA, make the whole label NA
+volcano_df$label[
+    volcano_df$label %>% 
+    sapply(function(x) grepl("^[NA]", 
+                              x, perl=T))] <- NA
+
+p <- ggplot(data=volcano_df, aes(x=beta, y=-log10(p), col=sig, label=label)) + 
+    geom_point() + 
+    geom_text_repel(size = 2,
+                    max.overlaps = 25) +
+    scale_color_manual(values=c("red", "blue", "black")) +
+    theme(legend.title=element_blank())
 p
 
+```
 
+# Tables of significant microbe-metabolite relationships
+These are long, but I have them separated into positive correlations and negative correlations (sorted by p value), followed by the most frequent metabolites with significant relationships, then the most frequent annotated metabolites.
+
+```{r sig_tables, echo=F}
 sig_intx <- results_dffilt %>% 
     filter(sig == "fdr p < 0.05") 
     
@@ -260,7 +323,11 @@ sig_intx[order(sig_intx$p),
     knitr::kable(caption = "Negatively associated microbes and metabolites")
 
 
-table(sig_intx$metabolite)[table(sig_intx$metabolite) %>% order(decreasing=T)] %>% head(10) %>% knitr::kable(caption = "Metabolites with most frequent significant relationships with microbes")
+table(sig_intx$metabolite)[table(sig_intx$metabolite) %>% 
+                               order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(caption = "Metabolites with most frequent significant relationships with microbes",
+                 col.names = c("Metabolite", "Frequency"))
 
 sig_intx$annotated <- sig_intx$metabolite %>% 
     sapply(function(x) !grepl("^[c][\\d]{3,}", 
@@ -275,4 +342,10 @@ table(named_sig_intx$metabolite)[table(named_sig_intx$metabolite) %>%
                  caption = "Annotated metabolites with most frequent significant relationships with microbes")
 
 
+# microbes
+table(sig_intx$microbe)[table(sig_intx$microbe) %>% 
+                               order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(caption = "Microbes with most frequent significant relationships with microbes",
+                 col.names = c("Microbe", "Frequency"))
 ```
