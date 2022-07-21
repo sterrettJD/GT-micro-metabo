@@ -129,7 +129,7 @@ unique(feature_sparsity)
 
 
 # Regressions
-```{r basic_regression}
+```{r basic_regression, echo=FALSE}
 all_df <- cbind(genus, aqueous, lipids)
 metabo_df <- cbind(aqueous, lipids)
 
@@ -200,7 +200,9 @@ print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
 
 #stop cluster
 stopCluster(cl)
+```
 
+```{r process_and_summarize_results}
 
 results_parallel$microbe <- unlist(y[1,])
 results_parallel$metabolite <- unlist(y[2,])
@@ -228,6 +230,7 @@ results_dffilt <- results_parallel %>%
 results_dffilt$fdr_p <- results_dffilt$p %>% 
     p.adjust("BH")
 
+
 results_dffilt$sig <- ifelse(test = results_dffilt$p > 0.05, # check baseline sig
                              yes = "p > 0.05",
                              # if p < 0.05, see if this remains after fdr correction
@@ -236,4 +239,40 @@ results_dffilt$sig <- ifelse(test = results_dffilt$p > 0.05, # check baseline si
                                          no = "fdr p < 0.05"))
 
 table(results_dffilt$sig)
+
+p <- ggplot(data=results_dffilt, aes(x=beta, y=-log10(p), col=sig)) + 
+    geom_point()
+p
+
+
+sig_intx <- results_dffilt %>% 
+    filter(sig == "fdr p < 0.05") 
+    
+sig_intx[order(sig_intx$p),
+         c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
+    filter(beta > 0) %>%
+    knitr::kable(caption = "Positively associated microbes and metabolites")
+
+
+sig_intx[order(sig_intx$p),
+         c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
+    filter(beta < 0) %>%
+    knitr::kable(caption = "Negatively associated microbes and metabolites")
+
+
+table(sig_intx$metabolite)[table(sig_intx$metabolite) %>% order(decreasing=T)] %>% head(10) %>% knitr::kable(caption = "Metabolites with most frequent significant relationships with microbes")
+
+sig_intx$annotated <- sig_intx$metabolite %>% 
+    sapply(function(x) !grepl("^[c][\\d]{3,}", 
+                              x, perl=T))
+
+named_sig_intx <- sig_intx %>% filter(annotated == TRUE)
+
+table(named_sig_intx$metabolite)[table(named_sig_intx$metabolite) %>%
+                                     order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(col.names = c("Metabolite", "Frequency"),
+                 caption = "Annotated metabolites with most frequent significant relationships with microbes")
+
+
 ```
