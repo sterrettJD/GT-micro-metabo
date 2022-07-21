@@ -213,7 +213,27 @@ hist(results_parallel$beta, breaks=100)
 
 hist(results_parallel$max_influence, breaks=20)
 
+quantile(results_parallel$max_influence, c(0.5, 0.9, 0.95, 0.99), na.rm=T)
+
 summary(results_parallel)
 
 ```
 
+
+# Assess regression results
+```{r lm_results}
+results_dffilt <- results_parallel %>% 
+    filter(max_influence < 4)
+
+results_dffilt$fdr_p <- results_dffilt$p %>% 
+    p.adjust("BH")
+
+results_dffilt$sig <- ifelse(test = results_dffilt$p > 0.05, # check baseline sig
+                             yes = "p > 0.05",
+                             # if p < 0.05, see if this remains after fdr correction
+                             no = ifelse(test = results_dffilt$fdr_p > 0.05,
+                                         yes = "p < 0.05",
+                                         no = "fdr p < 0.05"))
+
+table(results_dffilt$sig)
+```
