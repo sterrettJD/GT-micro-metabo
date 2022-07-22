@@ -17,7 +17,8 @@ pacman::p_load(tidyverse,
                foreach,
                parallel,
                doSNOW,
-               ggrepel)
+               ggrepel,
+               HLMdiag)
 
 '%ni%' <- Negate('%in%')
 
@@ -157,11 +158,6 @@ feat_name_mapped <- data.frame(new=names(lm_df), old=names(all_df))
 
 # Janet Seibert's suggested dffits threshold
 dffits_thresh <- 4
-
-
-results <- data.frame(matrix(nrow=0, ncol=5))
-names(results) <- c("microbe", "metabolite", "p", "beta", "max_influence") 
-
 
 # create function to parallelize
 run_lm <- function(i, j){
@@ -374,4 +370,103 @@ table(sig_intx$microbe)[table(sig_intx$microbe) %>%
     head(10) %>% 
     knitr::kable(caption = "Microbes with most frequent significant relationships with microbes",
                  col.names = c("Microbe", "Frequency"))
+```
+
+
+
+
+# Mixed effects modeling
+Adding a random effect for humanized microbiome ID for a formula of metabolite ~ microbe + (1|humanized_id)
+
+
+```{r run_lmes}
+lme_df <- all_df %>% janitor::clean_names()
+lme_df$PID <- metadata$PID
+
+# Janet Seibert's suggested dffits threshold
+dffits_thresh <- 4
+
+# create function to parallelize
+run_lme <- function(i, j){
+    microbe <- feat_name_mapped[feat_name_mapped$old==genus_names[i], 
+                                "new"]
+    metabolite <- feat_name_mapped[feat_name_mapped$old==names(metabo_df)[j], 
+                                   "new"]
+    # scale the metabolite so beta is interpretable
+    curr_lm_df <- lme_df[, c(microbe, metabolite, "PID")]
+    curr_lm_df[, metabolite] <- scale(curr_lm_df[, metabolite])
+    
+    # create formula
+    formula <- paste0(metabolite, " ~ ", microbe, " + (1|PID)")
+    
+    # run model
+    mod <- lmerTest::lmer(formula, curr_lm_df)
+    
+    # extract p and beta
+    p <- coef(summary(mod))[microbe,"Pr(>|t|)"]
+    my_beta <- coef(summary(mod))[microbe,"Estimate"]
+    
+    # calculate maximum influence of any point
+    dffits_df <- as.data.frame(HLMdiag::mdffits(mod))
+    max_influence <- max(abs(dffits_df))
+    
+    # add new results to df
+    new_results <- list(microbe, metabolite, p, my_beta, max_influence)
+    return(new_results)
+}
+
+#setup parallel backend to use many processors
+cores <- detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+doParallel::registerDoParallel(cl)
+
+registerDoSNOW(cl) # not sure what this is
+iterations_i <- ncol(genus)
+iterations_j <- ncol(metabo_df)
+pb <- txtProgressBar(max = iterations_i*iterations_j, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+
+results_lme <- data.frame(matrix(nrow=ncol(genus)*ncol(metabo_df), 
+                                      ncol=5))
+names(results_lme) <- c("microbe", "metabolite", "p", "beta", "max_influence") 
+
+ptm <- proc.time()
+y_lme <- foreach(i=1:iterations_i, 
+             .combine=cbind, 
+             .options.snow = opts) %:%
+    foreach(j=1:iterations_j, 
+            .combine=cbind, 
+            .options.snow = opts) %dopar% {
+                progress(i)
+                run_lme(i,j)
+            }
+
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
+#stop cluster
+stopCluster(cl)
+
+
+
+```
+
+
+```{r process_and_summarize_lme_results, echo=F}
+
+results_lme$microbe <- unlist(y_lme[1,])
+results_lme$metabolite <- unlist(y_lme[2,])
+results_lme$p <- unlist(y_lme[3,])
+results_lme$beta <- unlist(y_lme[4,])
+results_lme$max_influence <- unlist(y_lme[5,])
+
+hist(results_lme$beta, breaks=100)
+
+hist(results_lme$max_influence, breaks=20)
+
+quantile(results_lme$max_influence, c(0.5, 0.9, 0.95, 0.99), na.rm=T)
+
+summary(results_lme)
+
 ```
