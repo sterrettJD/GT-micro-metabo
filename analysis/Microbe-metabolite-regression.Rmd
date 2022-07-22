@@ -448,18 +448,18 @@ print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
 #stop cluster
 stopCluster(cl)
 
-
-
-```
-
-
-```{r process_and_summarize_lme_results, echo=F}
-
 results_lme$microbe <- unlist(y_lme[1,])
 results_lme$metabolite <- unlist(y_lme[2,])
 results_lme$p <- unlist(y_lme[3,])
 results_lme$beta <- unlist(y_lme[4,])
 results_lme$max_influence <- unlist(y_lme[5,])
+
+write.csv(results_lme, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_results.csv")
+
+```
+
+
+```{r process_and_summarize_lme_results, echo=F}
 
 hist(results_lme$beta, breaks=100)
 
