@@ -2,7 +2,9 @@
 title: "Microbe-metabolite regression analysis"
 author: "John Sterrett"
 date: '2022-07-14'
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -310,6 +312,30 @@ These are long, but I have them separated into positive correlations and negativ
 ```{r sig_tables, echo=F}
 sig_intx <- results_dffilt %>% 
     filter(sig == "fdr p < 0.05") 
+
+heatmap_df <- sig_intx %>% 
+    select(microbe, metabolite, beta) %>%
+    pivot_wider(names_from = metabolite, values_from = beta)
+
+row.names(heatmap_df) <- heatmap_df$microbe
+heatmap_df %>% 
+    select(-microbe) %>% 
+    complete() %>% 
+    as.matrix() %>% 
+    heatmap(Colv = NA, Rowv = NA, labRow = rownames(heatmap_df))
+
+heatmap_df <- sig_intx
+heatmap_df$metabolite <- heatmap_df$metabolite %>%
+    sapply(function(x) str_wrap(x, width=10) %>% paste0(sep="\n"))
+    
+
+p <- ggplot(heatmap_df, aes(microbe, metabolite, fill= beta)) + 
+    geom_tile(colour="black", size=0.2) + 
+    scale_x_discrete(labels = scales::label_wrap(10)) +
+    coord_fixed(1) +
+    theme_minimal()
+p
+
     
 sig_intx[order(sig_intx$p),
          c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
