@@ -18,7 +18,8 @@ pacman::p_load(tidyverse,
                parallel,
                doSNOW,
                ggrepel,
-               HLMdiag)
+               HLMdiag,
+               igraph)
 
 '%ni%' <- Negate('%in%')
 
@@ -601,6 +602,124 @@ table(sig_intx$microbe)[table(sig_intx$microbe) %>%
                  col.names = c("Microbe", "Frequency"))
 ```
 
+
+### Network
+
+#### Run regressions within datasets
+
+```{r}
+# create function to parallelize
+run_lme_within <- function(i, j, scale_features=F){
+    feature_1 <- feat_name_mapped[feat_name_mapped$old==i, 
+                                "new"]
+    feature_2 <- feat_name_mapped[feat_name_mapped$old==j, 
+                                   "new"]
+    
+    curr_lm_df <- lme_df[, c(feature_1, feature_2, "PID")]
+    if(scale_features==T){
+    # scale so beta is interpretable
+        curr_lm_df[, feature_2] <- scale(curr_lm_df[, feature_2])
+    }
+    
+    # create formula
+    formula <- paste0(feature_2, " ~ ", feature_1, " + (1|PID)")
+    
+    # run model
+    mod <- lmerTest::lmer(formula, curr_lm_df)
+    
+    # extract p and beta
+    p <- coef(summary(mod))[feature_1,"Pr(>|t|)"]
+    my_beta <- coef(summary(mod))[feature_1,"Estimate"]
+    
+    # calculate maximum influence of any point
+    dffits_df <- as.data.frame(HLMdiag::mdffits(mod))
+    max_influence <- max(abs(dffits_df))
+    
+    # add new results to df
+    new_results <- list(feature_1, feature_2, p, my_beta, max_influence)
+    return(new_results)
+}
+
+# Commented out to only run when desired, not when knitting
+
+#setup parallel backend to use many processors
+cores <- detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+doParallel::registerDoParallel(cl)
+ 
+registerDoSNOW(cl)
+
+pb <- txtProgressBar(max = ncol(genus)^2, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+# run microbe-microbe regressions
+results_lme_genus <- data.frame(matrix(nrow=ncol(genus)^2,
+                                       ncol=5))
+names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
+
+ptm <- proc.time()
+y_lme <- foreach(i=1:ncol(genus),
+             .combine=cbind,
+             .options.snow = opts) %:%
+    foreach(j=1:ncol(genus),
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                if(j>i){
+                    feature_1 <- genus_names[[i]]
+                    feature_2 <- genus_names[[j]]
+                    
+                    
+    #                run_lme_within(feature_1, feature_2)
+                    
+                    
+                    tryCatch(run_lme_within(feature_1, feature_2),
+                             error = function(e) 
+                                return(list(e, NA, NA, NA, NA))
+                    )
+                }
+            }
+# names(metabo_df)[j]
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+ 
+#stop cluster
+stopCluster(cl)
+
+results_lme_genus$feature_1 <- unlist(y_lme[1,])
+results_lme_genus$feature_2 <- unlist(y_lme[2,])
+results_lme_genus$p <- unlist(y_lme[3,])
+results_lme_genus$beta <- unlist(y_lme[4,])
+results_lme_genus$max_influence <- unlist(y_lme[5,])
+
+
+```
+
+
+#### Visualize network
+```{r}
+
+
+
+
+
+edgelist_df <- results_dffilt_lme %>% 
+    filter(p < 0.05) %>% 
+    select(microbe, metabolite, beta)
+
+adj_df <- edgelist_df %>% pivot_wider(values_from=beta, names_from=metabolite)
+
+head(adj_df)
+
+
+adj_mat <- adj_df %>% select(-microbe) %>% as.matrix()
+
+dim(adj_mat)
+
+graph_from_adjacency_matrix(adj_mat, mode='undirected', diag=F)
+```
+
+
+
 ## Random effect for humanized group + experiment
 
 Adding a random effect for humanized microbiome ID for a formula of metabolite \~ microbe + (1\|humanized_id)
@@ -781,10 +900,11 @@ heatmap_df$metabolite <- heatmap_df$metabolite %>%
     
 
 p <- ggplot(heatmap_df, aes(microbe, metabolite, fill= beta)) + 
-    geom_tile(colour="black", size=0.2) + 
+    geom_tile(colour="black") + 
     scale_y_discrete(labels = scales::label_wrap(10)) +
     coord_fixed(1) +
-    theme_minimal()
+    theme_minimal() + 
+    theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1))
 p
 
     
@@ -826,3 +946,5 @@ table(sig_intx$microbe)[table(sig_intx$microbe) %>%
     knitr::kable(caption = "Microbes with most frequent significant relationships with microbes",
                  col.names = c("Microbe", "Frequency"))
 ```
+
+
