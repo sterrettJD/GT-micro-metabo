@@ -610,7 +610,7 @@ table(sig_intx$microbe)[table(sig_intx$microbe) %>%
 ```{r}
 # create function to parallelize
 
-run_lme_within <- function(feature_1, feature_2, scale_features=F){
+run_lme_within <- function(feature_1, feature_2, scale_features=F, sparsity_cutoff=0.95){
     feature_1 <- feat_name_mapped[feat_name_mapped$old==feature_1, 
                                 "new"]
     feature_2 <- feat_name_mapped[feat_name_mapped$old==feature_2, 
@@ -618,14 +618,16 @@ run_lme_within <- function(feature_1, feature_2, scale_features=F){
     
     curr_lm_df <- lme_df[, c(feature_1, feature_2, "PID")]
     
-    if( (coop::sparsity(as.matrix(curr_lm_df[,feature_1])) > 0.95) ||
-        (coop::sparsity(as.matrix(curr_lm_df[,feature_2])) > 0.95)
+    # Only do regression if features are found in more than 5% of samples
+    if( (coop::sparsity(as.matrix(curr_lm_df[,feature_1])) > sparsity_cutoff) ||
+        (coop::sparsity(as.matrix(curr_lm_df[,feature_2])) > sparsity_cutoff)
     ){
         return(list(feature_1, feature_2, NA, NA, NA))
     }
     
     if(scale_features==T){
     # scale so beta is interpretable
+        curr_lm_df[, feature_1] <- scale(curr_lm_df[, feature_1])
         curr_lm_df[, feature_2] <- scale(curr_lm_df[, feature_2])
     }
     
@@ -662,6 +664,8 @@ progress <- function(n) setTxtProgressBar(pb, n)
 opts <- list(progress = progress)
 
 # run microbe-microbe regressions
+# dimensions should be (num features^2 - num features )/ 2 
+# because it's only half of corr matrix and self corr will be 1
 results_lme_genus <- data.frame(matrix(nrow=(ncol(genus)^2 - ncol(genus))/2,
                                        ncol=5))
 names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
@@ -680,25 +684,62 @@ y_lme <- foreach(i=1:ncol(genus),
                     
                     
                     run_lme_within(feature_1, feature_2)
-                    
-                    
-                    #tryCatch(run_lme_within(feature_1, feature_2),
-                    #         error = function(e) 
-                    #            return(list(e, NA, NA, NA, NA))
-                    #)
+
                 }
             }
-# names(metabo_df)[j]
+
 print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
- 
-#stop cluster
-stopCluster(cl)
+
 
 results_lme_genus$feature_1 <- unlist(y_lme[1,])
 results_lme_genus$feature_2 <- unlist(y_lme[2,])
 results_lme_genus$p <- unlist(y_lme[3,])
 results_lme_genus$beta <- unlist(y_lme[4,])
 results_lme_genus$max_influence <- unlist(y_lme[5,])
+
+
+# metabolomics
+pb <- txtProgressBar(max = ncol(metabo_df)^2, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+# setup results dataframe
+# dimensions should be (num features^2 - num features )/ 2 
+# because it's only half of corr matrix and self corr will be 1
+results_lme_metabo <- data.frame(matrix(nrow=(ncol(metabo_df)^2 - ncol(metabo_df))/2,
+                                       ncol=5))
+names(results_lme_metabo) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
+
+#i <- 1; j <- 8
+
+ptm <- proc.time()
+y_lme <- foreach(i=1:ncol(metabo_df),
+             .combine=cbind,
+             .options.snow = opts) %:%
+    foreach(j=1:ncol(metabo_df),
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                if(j>i){
+                    feature_1 <- names(metabo_df)[[i]]
+                    feature_2 <- names(metabo_df)[[j]]
+                    
+                    run_lme_within(feature_1, feature_2, 
+                                   scale_features = T)
+                    
+                }
+            }
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+ 
+#stop cluster
+stopCluster(cl)
+
+results_lme_metabo$feature_1 <- unlist(y_lme[1,])
+results_lme_metabo$feature_2 <- unlist(y_lme[2,])
+results_lme_metabo$p <- unlist(y_lme[3,])
+results_lme_metabo$beta <- unlist(y_lme[4,])
+results_lme_metabo$max_influence <- unlist(y_lme[5,])
+
+results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
 
 
 ```
