@@ -671,31 +671,31 @@ results_lme_genus <- data.frame(matrix(nrow=(ncol(genus)^2 - ncol(genus))/2,
 names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
 
 ptm <- proc.time()
-y_lme <- foreach(i=1:ncol(genus),
-             .combine=cbind,
-             .options.snow = opts) %:%
-    foreach(j=1:ncol(genus),
-            .combine=cbind,
-            .options.snow = opts) %dopar% {
-                if(j>i){
-                    feature_1 <- genus_names[[i]]
-                    feature_2 <- genus_names[[j]]
-                    
-                    
-                    
-                    run_lme_within(feature_1, feature_2)
-
-                }
-            }
-
-print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
-
-
-results_lme_genus$feature_1 <- unlist(y_lme[1,])
-results_lme_genus$feature_2 <- unlist(y_lme[2,])
-results_lme_genus$p <- unlist(y_lme[3,])
-results_lme_genus$beta <- unlist(y_lme[4,])
-results_lme_genus$max_influence <- unlist(y_lme[5,])
+# y_lme <- foreach(i=1:ncol(genus),
+#              .combine=cbind,
+#              .options.snow = opts) %:%
+#     foreach(j=1:ncol(genus),
+#             .combine=cbind,
+#             .options.snow = opts) %dopar% {
+#                 if(j>i){
+#                     feature_1 <- genus_names[[i]]
+#                     feature_2 <- genus_names[[j]]
+#                     
+#                     
+#                     
+#                     run_lme_within(feature_1, feature_2)
+# 
+#                 }
+#             }
+# 
+# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+# 
+# 
+# results_lme_genus$feature_1 <- unlist(y_lme[1,])
+# results_lme_genus$feature_2 <- unlist(y_lme[2,])
+# results_lme_genus$p <- unlist(y_lme[3,])
+# results_lme_genus$beta <- unlist(y_lme[4,])
+# results_lme_genus$max_influence <- unlist(y_lme[5,])
 
 
 # metabolomics
@@ -710,62 +710,103 @@ results_lme_metabo <- data.frame(matrix(nrow=(ncol(metabo_df)^2 - ncol(metabo_df
                                        ncol=5))
 names(results_lme_metabo) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
 
-#i <- 1; j <- 8
-
 ptm <- proc.time()
-y_lme <- foreach(i=1:ncol(metabo_df),
-             .combine=cbind,
-             .options.snow = opts) %:%
-    foreach(j=1:ncol(metabo_df),
-            .combine=cbind,
-            .options.snow = opts) %dopar% {
-                if(j>i){
-                    feature_1 <- names(metabo_df)[[i]]
-                    feature_2 <- names(metabo_df)[[j]]
-                    
-                    run_lme_within(feature_1, feature_2, 
-                                   scale_features = T)
-                    
-                }
-            }
-print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+# y_lme <- foreach(i=1:ncol(metabo_df),
+#              .combine=cbind,
+#              .options.snow = opts) %:%
+#     foreach(j=1:ncol(metabo_df),
+#             .combine=cbind,
+#             .options.snow = opts) %dopar% {
+#                 if(j>i){
+#                     feature_1 <- names(metabo_df)[[i]]
+#                     feature_2 <- names(metabo_df)[[j]]
+#                     
+#                     run_lme_within(feature_1, feature_2, 
+#                                    scale_features = T)
+#                     
+#                 }
+#             }
+# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
  
 #stop cluster
 stopCluster(cl)
 
-results_lme_metabo$feature_1 <- unlist(y_lme[1,])
-results_lme_metabo$feature_2 <- unlist(y_lme[2,])
-results_lme_metabo$p <- unlist(y_lme[3,])
-results_lme_metabo$beta <- unlist(y_lme[4,])
-results_lme_metabo$max_influence <- unlist(y_lme[5,])
-
-results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
-
+# results_lme_metabo$feature_1 <- unlist(y_lme[1,])
+# results_lme_metabo$feature_2 <- unlist(y_lme[2,])
+# results_lme_metabo$p <- unlist(y_lme[3,])
+# results_lme_metabo$beta <- unlist(y_lme[4,])
+# results_lme_metabo$max_influence <- unlist(y_lme[5,])
+# 
+# results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
+# 
+# 
+# write.csv(results_lme_within, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
+# 
+results_lme_within <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
 
 ```
 
 
 #### Visualize network
 ```{r}
+# filter high max influence
+results_lme_within <- results_lme_within %>% 
+    filter(max_influence < 4) %>%
+    select(-V1) #drop the added column
+
+results_lme_between <- results_dffilt_lme %>% 
+    rename("feature_1" = "microbe",
+            "feature_2" = "metabolite") %>%
+    select(-fdr_p,
+           -sig,
+           -V1)
+
+edgelist_df <- rbind(results_lme_between, results_lme_within)
+    
+edgelist_df$fdr_p <- p.adjust(edgelist_df$p)
+edgelist_for_graph <- edgelist_df %>% 
+    filter(fdr_p < 0.05) %>% 
+    select(feature_1, feature_2, beta)
+
+# network with all fdr p interactions
+g_all <- edgelist_for_graph[complete.cases(edgelist_for_graph)] %>% 
+    select(-beta) %>% 
+    as.matrix() %>%
+    graph_from_edgelist(directed = F)
+
+degrees_g_all <- degree(g_all, mode="all") %>% 
+    sort(decreasing=T)
+degrees_g_all %>% 
+    head(10) %>% 
+    knitr::kable(caption="Microbes/metabolites with most FDR significant relationships", 
+                 col.names = c("Frequency"))
+
+# network with only positive interactions
+g_pos <- edgelist_for_graph[complete.cases(edgelist_for_graph)] %>% 
+    filter(beta > 0) %>%
+    select(-beta) %>% 
+    as.matrix() %>%
+    graph_from_edgelist(directed = F)
+plot(g, vertex.label=NA)
+
+
+for (i in 1:10){
+    
+    feat_neighbors <- g_all %>% neighbors(names(degrees_g_all[i]))
+
+    g_all %>% subgraph(vids = feat_neighbors) %>% plot()
+}
+
+
+for (i in 1:10){
+    
+    feat_neighbors <- g_pos %>% neighbors(names(degrees_g_all[i]))
+
+    g_pos %>% subgraph(vids = feat_neighbors) %>% plot()
+}
 
 
 
-
-
-edgelist_df <- results_dffilt_lme %>% 
-    filter(p < 0.05) %>% 
-    select(microbe, metabolite, beta)
-
-adj_df <- edgelist_df %>% pivot_wider(values_from=beta, names_from=metabolite)
-
-head(adj_df)
-
-
-adj_mat <- adj_df %>% select(-microbe) %>% as.matrix()
-
-dim(adj_mat)
-
-graph_from_adjacency_matrix(adj_mat, mode='undirected', diag=F)
 ```
 
 
