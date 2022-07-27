@@ -609,13 +609,21 @@ table(sig_intx$microbe)[table(sig_intx$microbe) %>%
 
 ```{r}
 # create function to parallelize
-run_lme_within <- function(i, j, scale_features=F){
-    feature_1 <- feat_name_mapped[feat_name_mapped$old==i, 
+
+run_lme_within <- function(feature_1, feature_2, scale_features=F){
+    feature_1 <- feat_name_mapped[feat_name_mapped$old==feature_1, 
                                 "new"]
-    feature_2 <- feat_name_mapped[feat_name_mapped$old==j, 
+    feature_2 <- feat_name_mapped[feat_name_mapped$old==feature_2, 
                                    "new"]
     
     curr_lm_df <- lme_df[, c(feature_1, feature_2, "PID")]
+    
+    if( (coop::sparsity(as.matrix(curr_lm_df[,feature_1])) > 0.95) ||
+        (coop::sparsity(as.matrix(curr_lm_df[,feature_2])) > 0.95)
+    ){
+        return(list(feature_1, feature_2, NA, NA, NA))
+    }
+    
     if(scale_features==T){
     # scale so beta is interpretable
         curr_lm_df[, feature_2] <- scale(curr_lm_df[, feature_2])
@@ -654,7 +662,7 @@ progress <- function(n) setTxtProgressBar(pb, n)
 opts <- list(progress = progress)
 
 # run microbe-microbe regressions
-results_lme_genus <- data.frame(matrix(nrow=ncol(genus)^2,
+results_lme_genus <- data.frame(matrix(nrow=(ncol(genus)^2 - ncol(genus))/2,
                                        ncol=5))
 names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
 
@@ -670,13 +678,14 @@ y_lme <- foreach(i=1:ncol(genus),
                     feature_2 <- genus_names[[j]]
                     
                     
-    #                run_lme_within(feature_1, feature_2)
+                    
+                    run_lme_within(feature_1, feature_2)
                     
                     
-                    tryCatch(run_lme_within(feature_1, feature_2),
-                             error = function(e) 
-                                return(list(e, NA, NA, NA, NA))
-                    )
+                    #tryCatch(run_lme_within(feature_1, feature_2),
+                    #         error = function(e) 
+                    #            return(list(e, NA, NA, NA, NA))
+                    #)
                 }
             }
 # names(metabo_df)[j]
