@@ -876,48 +876,88 @@ heatmap_df <- data.frame(
 )
 colnames(heatmap_df) <- unique(sig_intx$metabolite)
 
+heatmap_df_p <- data.frame(
+    matrix(
+        nrow = length(unique(sig_intx$microbe)),
+        ncol = length(unique(sig_intx$metabolite))
+    ),
+    row.names = unique(sig_intx$microbe)
+    #col.names = unique(sig_intx$metabolite)
+)
+colnames(heatmap_df_p) <- unique(sig_intx$metabolite)
+
 for(mic in unique(sig_intx$microbe)){
     for(met in unique(sig_intx$metabolite)){
         # if it isn't already in the sig_intx df
         if(nrow(filter(sig_intx,
                        microbe==mic, 
                        metabolite==met)) == 0){
-            print(paste("finding", mic, met) )
             # get the corresponding row from edgelist
-            beta_val <- edgelist_df %>% 
+            vals <- edgelist_df %>% 
                 filter(feature_1 %in% c(mic, met),
                        feature_2 %in% c(mic, met)) %>%
-                select(beta)
+                select(beta, p)
+            
+            
         } else { # grab from sig_intx otherwise
-            beta_val <- sig_intx %>%
+            vals <- sig_intx %>%
                 filter(microbe==mic, 
                        metabolite==met) %>%
-                select(beta)
+                select(beta, p)
         }
-        # If there was a beta (regression ran successfully)
-        if(nrow(beta_val)>0){
+        # If there was a beta (regression ran successfully
+        
+        if(nrow(vals)>0){
+            beta_val <- vals$beta
+            p_val <- vals$p
+            
             heatmap_df[mic, met] <- beta_val    
+            heatmap_df_p[mic, met] <- p_val
         }
     }
 }
 
 
+heatmap_df$microbe <- row.names(heatmap_df)
+heatmap_df_p$microbe <- row.names(heatmap_df_p)
+
+heatmap_df_long <- heatmap_df %>% 
+    pivot_longer(cols=!microbe, 
+                 names_to="metabolite", 
+                 values_to="beta")
+heatmap_df_p_long <- heatmap_df_p %>% 
+    pivot_longer(cols=!microbe, 
+                 names_to="metabolite", 
+                 values_to="p")
+heatmap_df_long$p <- heatmap_df_p_long$p
+
+
+heatmap_df_long$plotmicrobe <- heatmap_df_long$microbe %>%
+    sapply(function(x) str_split(x, pattern="_")[[1]]) %>%
+    sapply(function(x) x[length(x)])
+
+heatmap_df_long$annotated <- heatmap_df_long$metabolite %>% sapply(function(x) !grepl("^[c][\\d]{2,}", x, perl=T))
 
 
 
+p <- ggplot(heatmap_df_long %>% filter(annotated==T), 
+            aes(x=plotmicrobe, 
+                y=metabolite, 
+                colour=beta, size=-log10(p),
+                alpha=1-p)) + 
+    geom_point() + 
+    scale_y_discrete(labels = ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust=1)) +
+    scale_color_gradient(low="blue",high="red", 
+                         limits=c(-max(heatmap_df_long$beta),
+                                  max(heatmap_df_long$beta)))
+    #scale_color_gradient2(midpoint=-log10(0.5), 
+    #                      low="blue", 
+    #                      mid="white",
+    #                      high="red", space ="Lab" )
 
 
-
-rbind(results_lme_between, results_lme_within) %>% 
-    filter(feature_1 %in% sig_intxing_mic_met,
-           feature_2 %in% sig_intxing_mic_met) 
-
-
-p <- ggplot(edgelist_df, aes(feature_1, feature_2, fill= beta)) + 
-    geom_tile(colour="black", size=0.2) + 
-    scale_x_discrete(labels = scales::label_wrap(10)) +
-    coord_fixed(1) +
-    theme_minimal()
 p
 ```
 
