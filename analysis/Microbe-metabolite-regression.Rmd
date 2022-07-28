@@ -598,7 +598,7 @@ table(named_sig_intx$metabolite)[table(named_sig_intx$metabolite) %>%
 table(sig_intx$microbe)[table(sig_intx$microbe) %>% 
                                order(decreasing=T)] %>% 
     head(10) %>% 
-    knitr::kable(caption = "Microbes with most frequent significant relationships with microbes",
+    knitr::kable(caption = "Microbes with most frequent significant relationships with metabolites",
                  col.names = c("Microbe", "Frequency"))
 ```
 
@@ -787,7 +787,10 @@ g_pos <- edgelist_for_graph[complete.cases(edgelist_for_graph)] %>%
     select(-beta) %>% 
     as.matrix() %>%
     graph_from_edgelist(directed = F)
-plot(g, vertex.label=NA)
+plot(g_pos, vertex.label=NA)
+
+degrees_g_pos <- degree(g_pos, mode="all") %>% 
+    sort(decreasing=T)
 
 
 for (i in 1:10){
@@ -806,7 +809,116 @@ for (i in 1:10){
 }
 
 
+for (i in 1:10){
+    
+    feat_neighbors <- g_pos %>% neighbors(names(degrees_g_pos[i]))
 
+    g_pos %>% subgraph(vids = feat_neighbors) %>% plot()
+}
+
+E(g_all)$weight <- edgelist_for_graph[complete.cases(edgelist_for_graph), "beta"]
+
+plot(g_all)
+
+Eig_cent_pos <- evcent(g_pos)
+Eig_cent_pos$vector %>% head(10) %>% knitr::kable()
+
+Eig_cent_pos_df <- Eig_cent_pos$vector %>% data.frame()
+names(Eig_cent_pos_df) <- c("Eigenvector centrality")
+Eig_cent_pos_df %>% 
+    arrange(desc(`Eigenvector centrality`)) %>% 
+    head(10) %>% knitr::kable("Nodes with highest Eigenvector centrality")
+
+
+heatmap_df <- sig_intx %>% select(-V1, -annotated, -sig)
+
+sig_intxing_mic_met <- c(sig_intx$microbe, sig_intx$metabolite)
+
+for(mic in unique(sig_intx$microbe)){
+    for(met in unique(sig_intx$metabolite)){
+        # if it isn't already in heatmap_df
+        if(nrow(filter(sig_intx,
+                       microbe==mic, 
+                       metabolite==met)) == 0){
+            print(paste("finding", mic, met) )
+            # get the corresponding row from edgelist
+            new_row <- edgelist_df %>% 
+                filter(feature_1 %in% c(mic, met),
+                       feature_2 %in% c(mic, met))
+            # map feature_1/2 to microbe/metabolite named column
+            if(feature_1==mic){
+                new_row <- new_row %>% 
+                    rename(microbe = feature_1,
+                           metabolite = feature_2)
+            } else {
+                new_row <- new_row %>% 
+                    rename(metabolite = feature_1,
+                           microbe = feature_2)
+            }
+            heatmap_df <- rbind(heatmap_df,
+                                new_row)
+        }
+    }
+}
+
+heatmap_df %>% select(microbe, metabolite, beta) %>%
+    pivot_wider(names_from = metabolite, values_from = beta)
+
+
+
+heatmap_df <- data.frame(
+    matrix(
+        nrow = length(unique(sig_intx$microbe)),
+        ncol = length(unique(sig_intx$metabolite))
+    ),
+    row.names = unique(sig_intx$microbe)
+    #col.names = unique(sig_intx$metabolite)
+)
+colnames(heatmap_df) <- unique(sig_intx$metabolite)
+
+for(mic in unique(sig_intx$microbe)){
+    for(met in unique(sig_intx$metabolite)){
+        # if it isn't already in the sig_intx df
+        if(nrow(filter(sig_intx,
+                       microbe==mic, 
+                       metabolite==met)) == 0){
+            print(paste("finding", mic, met) )
+            # get the corresponding row from edgelist
+            beta_val <- edgelist_df %>% 
+                filter(feature_1 %in% c(mic, met),
+                       feature_2 %in% c(mic, met)) %>%
+                select(beta)
+        } else { # grab from sig_intx otherwise
+            beta_val <- sig_intx %>%
+                filter(microbe==mic, 
+                       metabolite==met) %>%
+                select(beta)
+        }
+        # If there was a beta (regression ran successfully)
+        if(nrow(beta_val)>0){
+            heatmap_df[mic, met] <- beta_val    
+        }
+    }
+}
+
+
+
+
+
+
+
+
+rbind(results_lme_between, results_lme_within) %>% 
+    filter(feature_1 %in% sig_intxing_mic_met,
+           feature_2 %in% sig_intxing_mic_met) 
+
+
+p <- ggplot(edgelist_df, aes(feature_1, feature_2, fill= beta)) + 
+    geom_tile(colour="black", size=0.2) + 
+    scale_x_discrete(labels = scales::label_wrap(10)) +
+    coord_fixed(1) +
+    theme_minimal()
+p
 ```
 
 
