@@ -939,23 +939,34 @@ heatmap_df_long$plotmicrobe <- heatmap_df_long$microbe %>%
 heatmap_df_long$annotated <- heatmap_df_long$metabolite %>% sapply(function(x) !grepl("^[c][\\d]{2,}", x, perl=T))
 
 
+heatmap_df_long$plotbeta <- heatmap_df_long$beta %>%
+    sapply(function(x) if(is.na(x)==F){
+        if(x>0){sqrt(x)} else{-sqrt(-x)}} 
+        else {NA})
 
-p <- ggplot(heatmap_df_long %>% filter(annotated==T), 
+
+p <- ggplot(heatmap_df_long %>% filter(annotated==T,
+                                       plotmicrobe %ni% c("g")), 
             aes(x=plotmicrobe, 
                 y=metabolite, 
-                colour=beta, size=-log10(p),
+                colour=plotbeta, size=-log10(p),
                 alpha=1-p)) + 
     geom_point() + 
     scale_y_discrete(labels = ) +
     theme_minimal() +
-    theme(axis.text.x = element_text(angle = 90, hjust=1)) +
-    scale_color_gradient(low="blue",high="red", 
-                         limits=c(-max(heatmap_df_long$beta),
-                                  max(heatmap_df_long$beta)))
-    #scale_color_gradient2(midpoint=-log10(0.5), 
-    #                      low="blue", 
-    #                      mid="white",
-    #                      high="red", space ="Lab" )
+    theme(axis.text.x = element_text(angle = 90, hjust=1),
+          axis.text.y = element_text(size=6)) +
+    # scale_color_gradient(low="blue",high="red", 
+    #                      limits=c(-max(heatmap_df_long$beta),
+    #                               max(heatmap_df_long$beta))) +
+    xlab("microbe") +
+    scale_color_gradient2(midpoint=0,
+                         low="blue",
+                         mid="grey",
+                         high="red", 
+                         space ="Lab",
+                         limits=c(min(heatmap_df_long$plotbeta),
+                                  max(heatmap_df_long$plotbeta)))
 
 
 p
