@@ -866,6 +866,7 @@ heatmap_df %>% select(microbe, metabolite, beta) %>%
 
 
 
+# TIME to extract the data for heatmapping
 heatmap_df <- data.frame(
     matrix(
         nrow = length(unique(sig_intx$microbe)),
@@ -950,7 +951,7 @@ p <- ggplot(heatmap_df_long %>% filter(annotated==T,
             aes(x=plotmicrobe, 
                 y=metabolite, 
                 colour=plotbeta, size=-log10(p),
-                alpha=1-p)) + 
+                alpha=(-log10(p))/max(-log10(p))) ) + 
     geom_point() + 
     scale_y_discrete(labels = ) +
     theme_minimal() +
