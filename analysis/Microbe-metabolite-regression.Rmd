@@ -748,7 +748,7 @@ results_lme_within <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-
 
 
 #### Visualize network
-```{r}
+```{r viznet}
 # filter high max influence
 results_lme_within <- results_lme_within %>% 
     filter(max_influence < 4) %>%
@@ -778,7 +778,7 @@ degrees_g_all <- degree(g_all, mode="all") %>%
     sort(decreasing=T)
 degrees_g_all %>% 
     head(10) %>% 
-    knitr::kable(caption="Microbes/metabolites with most FDR significant relationships", 
+    knitr::kable(caption="Microbes/metabolites with most total FDR significant relationships", 
                  col.names = c("Frequency"))
 
 # network with only positive interactions
@@ -787,27 +787,24 @@ g_pos <- edgelist_for_graph[complete.cases(edgelist_for_graph)] %>%
     select(-beta) %>% 
     as.matrix() %>%
     graph_from_edgelist(directed = F)
-plot(g_pos, vertex.label=NA)
+
+plot(g_pos, vertex.label=NA, title="Positive interactions network")
 
 degrees_g_pos <- degree(g_pos, mode="all") %>% 
     sort(decreasing=T)
 
+```
 
+#### Subgraphs of high degree nodes
+```{r subgraphs}
+print("Highest degree in all fdr sig interactions network")
 for (i in 1:10){
-    
     feat_neighbors <- g_all %>% neighbors(names(degrees_g_all[i]))
 
     g_all %>% subgraph(vids = feat_neighbors) %>% plot()
 }
 
-
-for (i in 1:10){
-    
-    feat_neighbors <- g_pos %>% neighbors(names(degrees_g_all[i]))
-
-    g_pos %>% subgraph(vids = feat_neighbors) %>% plot()
-}
-
+print("Highest degree in positive fdr sig interactions network")
 
 for (i in 1:10){
     
@@ -818,8 +815,6 @@ for (i in 1:10){
 
 E(g_all)$weight <- edgelist_for_graph[complete.cases(edgelist_for_graph), "beta"]
 
-plot(g_all)
-
 Eig_cent_pos <- evcent(g_pos)
 Eig_cent_pos$vector %>% head(10) %>% knitr::kable()
 
@@ -829,43 +824,9 @@ Eig_cent_pos_df %>%
     arrange(desc(`Eigenvector centrality`)) %>% 
     head(10) %>% knitr::kable("Nodes with highest Eigenvector centrality")
 
-
-heatmap_df <- sig_intx %>% select(-V1, -annotated, -sig)
-
-sig_intxing_mic_met <- c(sig_intx$microbe, sig_intx$metabolite)
-
-for(mic in unique(sig_intx$microbe)){
-    for(met in unique(sig_intx$metabolite)){
-        # if it isn't already in heatmap_df
-        if(nrow(filter(sig_intx,
-                       microbe==mic, 
-                       metabolite==met)) == 0){
-            print(paste("finding", mic, met) )
-            # get the corresponding row from edgelist
-            new_row <- edgelist_df %>% 
-                filter(feature_1 %in% c(mic, met),
-                       feature_2 %in% c(mic, met))
-            # map feature_1/2 to microbe/metabolite named column
-            if(feature_1==mic){
-                new_row <- new_row %>% 
-                    rename(microbe = feature_1,
-                           metabolite = feature_2)
-            } else {
-                new_row <- new_row %>% 
-                    rename(metabolite = feature_1,
-                           microbe = feature_2)
-            }
-            heatmap_df <- rbind(heatmap_df,
-                                new_row)
-        }
-    }
-}
-
-heatmap_df %>% select(microbe, metabolite, beta) %>%
-    pivot_wider(names_from = metabolite, values_from = beta)
-
-
-
+```
+#### Heatmap
+```{r heatmap_lme}
 # TIME to extract the data for heatmapping
 heatmap_df <- data.frame(
     matrix(
@@ -883,7 +844,6 @@ heatmap_df_p <- data.frame(
         ncol = length(unique(sig_intx$metabolite))
     ),
     row.names = unique(sig_intx$microbe)
-    #col.names = unique(sig_intx$metabolite)
 )
 colnames(heatmap_df_p) <- unique(sig_intx$metabolite)
 
@@ -894,9 +854,13 @@ for(mic in unique(sig_intx$microbe)){
                        microbe==mic, 
                        metabolite==met)) == 0){
             # get the corresponding row from edgelist
-            vals <- edgelist_df %>% 
-                filter(feature_1 %in% c(mic, met),
-                       feature_2 %in% c(mic, met)) %>%
+            # vals <- edgelist_df %>% 
+            #     filter(feature_1 %in% c(mic, met),
+            #            feature_2 %in% c(mic, met)) %>%
+            #     select(beta, p)
+            vals <- results_dffilt_lme %>% 
+                filter(microbe == mic,
+                       metabolite == met) %>%
                 select(beta, p)
             
             
@@ -945,32 +909,39 @@ heatmap_df_long$plotbeta <- heatmap_df_long$beta %>%
         if(x>0){sqrt(x)} else{-sqrt(-x)}} 
         else {NA})
 
+heatmap_df_long$plotmetabolite <- heatmap_df_long$metabolite %>%
+    sapply(function(x) substring(x, 1, nchar(x)-6))
 
-p <- ggplot(heatmap_df_long %>% filter(annotated==T,
-                                       plotmicrobe %ni% c("g")), 
-            aes(x=plotmicrobe, 
-                y=metabolite, 
+
+p <- ggplot(heatmap_df_long %>% 
+                filter(annotated==T,
+                       plotmicrobe %ni% c("g")),  
+            aes(y=plotmicrobe, 
+                x=plotmetabolite, 
                 colour=plotbeta, size=-log10(p),
-                alpha=(-log10(p))/max(-log10(p))) ) + 
+                alpha=(-log10(p))/max(-log10(p)),
+                shape=p<0.05) ) + 
     geom_point() + 
     scale_y_discrete(labels = ) +
     theme_minimal() +
-    theme(axis.text.x = element_text(angle = 90, hjust=1),
+    theme(axis.text.x = element_text(size=6, angle = 90, hjust=1, vjust=0.5),
           axis.text.y = element_text(size=6)) +
-    # scale_color_gradient(low="blue",high="red", 
-    #                      limits=c(-max(heatmap_df_long$beta),
-    #                               max(heatmap_df_long$beta))) +
-    xlab("microbe") +
+    ylab("microbe") +
+    xlab("metabolite") +
     scale_color_gradient2(midpoint=0,
                          low="blue",
                          mid="grey",
                          high="red", 
                          space ="Lab",
                          limits=c(min(heatmap_df_long$plotbeta),
-                                  max(heatmap_df_long$plotbeta)))
+                                  max(heatmap_df_long$plotbeta)),
+                        name="sqrt beta")
 
 
 p
+
+ggsave("../figures/microbe-metabo-heatmap.pdf", plot=p,height = 10, width = 8)
+ggsave("../figures/microbe-metabo-heatmap.png", plot=p,height = 10, width = 8)
 ```
 
 
