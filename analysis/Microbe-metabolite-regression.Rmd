@@ -309,29 +309,6 @@ These are long, but I have them separated into positive correlations and negativ
 sig_intx <- results_dffilt %>% 
     filter(sig == "fdr p < 0.05") 
 
-heatmap_df <- sig_intx %>% 
-    select(microbe, metabolite, beta) %>%
-    pivot_wider(names_from = metabolite, values_from = beta)
-
-row.names(heatmap_df) <- heatmap_df$microbe
-heatmap_df %>% 
-    select(-microbe) %>% 
-    complete() %>% 
-    as.matrix() %>% 
-    heatmap(Colv = NA, Rowv = NA, labRow = rownames(heatmap_df))
-
-heatmap_df <- sig_intx
-heatmap_df$metabolite <- heatmap_df$metabolite %>%
-    sapply(function(x) str_wrap(x, width=10) %>% paste0(sep="\n"))
-    
-
-p <- ggplot(heatmap_df, aes(microbe, metabolite, fill= beta)) + 
-    geom_tile(colour="black", size=0.2) + 
-    scale_x_discrete(labels = scales::label_wrap(10)) +
-    coord_fixed(1) +
-    theme_minimal()
-p
-
     
 sig_intx[order(sig_intx$p),
          c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
@@ -538,30 +515,6 @@ p
 ```{r sig_lme_tables, echo=F}
 sig_intx <- results_dffilt_lme %>% 
     filter(sig == "fdr p < 0.05") 
-
-heatmap_df <- sig_intx %>% 
-    select(microbe, metabolite, beta) %>%
-    pivot_wider(names_from = metabolite, values_from = beta)
-
-row.names(heatmap_df) <- heatmap_df$microbe
-heatmap_df %>% 
-    select(-microbe) %>% 
-    complete() %>% 
-    as.matrix() %>% 
-    heatmap(Colv = NA, Rowv = NA, labRow = rownames(heatmap_df))
-
-heatmap_df <- sig_intx
-heatmap_df$metabolite <- heatmap_df$metabolite %>%
-    sapply(function(x) str_wrap(x, width=10) %>% paste0(sep="\n"))
-    
-
-p <- ggplot(heatmap_df, aes(microbe, metabolite, fill= beta)) + 
-    geom_tile(colour="black", size=0.2) + 
-    scale_x_discrete(labels = scales::label_wrap(10)) +
-    coord_fixed(1) +
-    theme_minimal()
-p
-
     
 sig_intx[order(sig_intx$p),
          c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
@@ -607,7 +560,7 @@ table(sig_intx$microbe)[table(sig_intx$microbe) %>%
 
 #### Run regressions within datasets
 
-```{r}
+```{r, echo=F}
 # create function to parallelize
 
 run_lme_within <- function(feature_1, feature_2, scale_features=F, sparsity_cutoff=0.95){
@@ -748,7 +701,7 @@ results_lme_within <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-
 
 
 #### Visualize network
-```{r viznet}
+```{r viznet, echo=F}
 # filter high max influence
 results_lme_within <- results_lme_within %>% 
     filter(max_influence < 4) %>%
@@ -796,7 +749,7 @@ degrees_g_pos <- degree(g_pos, mode="all") %>%
 ```
 
 #### Subgraphs of high degree nodes
-```{r subgraphs}
+```{r subgraphs, echo=F}
 print("Highest degree in all fdr sig interactions network")
 for (i in 1:10){
     feat_neighbors <- g_all %>% neighbors(names(degrees_g_all[i]))
@@ -822,7 +775,7 @@ Eig_cent_pos_df <- Eig_cent_pos$vector %>% data.frame()
 names(Eig_cent_pos_df) <- c("Eigenvector centrality")
 Eig_cent_pos_df %>% 
     arrange(desc(`Eigenvector centrality`)) %>% 
-    head(10) %>% knitr::kable("Nodes with highest Eigenvector centrality")
+    head(10) %>% knitr::kable(caption="Nodes with highest Eigenvector centrality")
 
 ```
 #### Heatmap
@@ -1108,31 +1061,6 @@ p
 ```{r sig_lme2_tables, echo=F}
 sig_intx <- results_dffilt_lme2 %>% 
     filter(sig == "fdr p < 0.05") 
-
-heatmap_df <- sig_intx %>% 
-    select(microbe, metabolite, beta) %>%
-    pivot_wider(names_from = metabolite, values_from = beta)
-
-row.names(heatmap_df) <- heatmap_df$microbe
-heatmap_df %>% 
-    select(-microbe) %>% 
-    complete() %>% 
-    as.matrix() %>% 
-    heatmap(Colv = NA, Rowv = NA, labRow = rownames(heatmap_df))
-
-heatmap_df <- sig_intx
-heatmap_df$metabolite <- heatmap_df$metabolite %>%
-    sapply(function(x) str_wrap(x, width=10) %>% paste0(sep="\n"))
-    
-
-p <- ggplot(heatmap_df, aes(microbe, metabolite, fill= beta)) + 
-    geom_tile(colour="black") + 
-    scale_y_discrete(labels = scales::label_wrap(10)) +
-    coord_fixed(1) +
-    theme_minimal() + 
-    theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1))
-p
-
     
 sig_intx[order(sig_intx$p),
          c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
