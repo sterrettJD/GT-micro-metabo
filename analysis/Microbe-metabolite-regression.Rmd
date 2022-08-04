@@ -801,31 +801,32 @@ heatmap_df_p <- data.frame(
 colnames(heatmap_df_p) <- unique(sig_intx$metabolite)
 
 for(mic in unique(sig_intx$microbe)){
+    
+    this_microbe_dffilt <- results_dffilt_lme %>% 
+                filter(microbe == mic)
+    this_microbe_sig_intx <- sig_intx %>%
+                filter(microbe==mic)
     for(met in unique(sig_intx$metabolite)){
+        
         # if it isn't already in the sig_intx df
-        if(nrow(filter(sig_intx,
-                       microbe==mic, 
-                       metabolite==met)) == 0){
+        this_sig_intx <- this_microbe_sig_intx %>%
+            filter(metabolite==met)
+        if(nrow(this_sig_intx) == 0){
+            
             # get the corresponding row from edgelist
-            # vals <- edgelist_df %>% 
-            #     filter(feature_1 %in% c(mic, met),
-            #            feature_2 %in% c(mic, met)) %>%
-            #     select(beta, p)
-            vals <- results_dffilt_lme %>% 
-                filter(microbe == mic,
-                       metabolite == met) %>%
+            vals <- this_microbe_dffilt %>% 
+                filter(metabolite == met) %>%
                 select(beta, p)
             
             
         } else { # grab from sig_intx otherwise
-            vals <- sig_intx %>%
-                filter(microbe==mic, 
-                       metabolite==met) %>%
+            vals <- this_sig_intx %>%
                 select(beta, p)
         }
-        # If there was a beta (regression ran successfully
         
+        # If there was a beta (regression ran successfully
         if(nrow(vals)>0){
+            # extract beta and p
             beta_val <- vals$beta
             p_val <- vals$p
             
@@ -851,8 +852,23 @@ heatmap_df_long$p <- heatmap_df_p_long$p
 
 
 heatmap_df_long$plotmicrobe <- heatmap_df_long$microbe %>%
-    sapply(function(x) str_split(x, pattern="_")[[1]]) %>%
-    sapply(function(x) x[length(x)])
+    sapply(function(x) x<- str_split(x, pattern="_")[[1]]) %>%
+    sapply(function(x) ifelse(x[length(x)] %in% c("1855d", "ph2", "smb53"),
+                              no=x[length(x)], 
+                              yes=ifelse(x[length(x)]=="1855d",
+                                         no=paste(x[length(x)-2],
+                                                  x[length(x)]),
+                                         yes=paste(x[length(x)-3],
+                                                   x[length(x)-1],
+                                                   x[length(x)]))
+                              )
+           )
+
+heatmap_df_long %>% 
+    filter(grepl("1855d", microbe)) %>% 
+    select(microbe) %>% 
+    head(1)
+
 
 heatmap_df_long$annotated <- heatmap_df_long$metabolite %>% sapply(function(x) !grepl("^[c][\\d]{2,}", x, perl=T))
 
