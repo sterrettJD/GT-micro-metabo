@@ -19,7 +19,8 @@ pacman::p_load(tidyverse,
                doSNOW,
                ggrepel,
                HLMdiag,
-               igraph)
+               igraph,
+               r2r)
 
 '%ni%' <- Negate('%in%')
 
@@ -555,7 +556,6 @@ table(sig_intx$microbe)[table(sig_intx$microbe) %>%
                  col.names = c("Microbe", "Frequency"))
 ```
 
-
 ### Network
 
 #### Run regressions within datasets
@@ -699,8 +699,8 @@ results_lme_within <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-
 
 ```
 
-
 #### Visualize network
+
 ```{r viznet, echo=F}
 # filter high max influence
 results_lme_within <- results_lme_within %>% 
@@ -749,6 +749,7 @@ degrees_g_pos <- degree(g_pos, mode="all") %>%
 ```
 
 #### Subgraphs of high degree nodes
+
 ```{r subgraphs, echo=F}
 print("Highest degree in all fdr sig interactions network")
 for (i in 1:10){
@@ -778,7 +779,9 @@ Eig_cent_pos_df %>%
     head(10) %>% knitr::kable(caption="Nodes with highest Eigenvector centrality")
 
 ```
+
 #### Heatmap
+
 ```{r heatmap_lme}
 # TIME to extract the data for heatmapping
 heatmap_df <- data.frame(
@@ -879,7 +882,30 @@ heatmap_df_long$plotbeta <- heatmap_df_long$beta %>%
         else {NA})
 
 heatmap_df_long$plotmetabolite <- heatmap_df_long$metabolite %>%
-    sapply(function(x) substring(x, 1, nchar(x)-6))
+    sapply(function(x) substring(x, 1, nchar(x)-6)) %>%
+    sapply(function(x) gsub("z_", ",", x, fixed=TRUE)) %>%
+    sapply(function(x) str_wrap(x, width=25))
+
+# heatmap_df_long$plotmetabolite %>% unique() %>% as.data.frame() %>% write.table("metabo_name_mapper.txt", sep="\t")
+
+# map the names to more visually friendly plotting names
+metabo_name_mapper <- fread("metabo_name_mapper_for_use.csv")
+
+name_hash <- hashmap()
+sapply(metabo_name_mapper$Old, 
+               function(x) {
+    insert(name_hash, 
+           x, 
+           metabo_name_mapper[metabo_name_mapper$Old == x, New])
+}
+)
+
+heatmap_df_long$plotmetabolite <- sapply(heatmap_df_long$plotmetabolite,
+       function(x){
+           gsub(x=query(name_hash, x), 
+                pattern="_", replacement=" ")
+       })
+
 
 
 p <- ggplot(heatmap_df_long %>% 
@@ -893,7 +919,10 @@ p <- ggplot(heatmap_df_long %>%
     geom_point() + 
     scale_y_discrete(labels = ) +
     theme_minimal() +
-    theme(axis.text.x = element_text(size=6, angle = 90, hjust=1, vjust=0.5),
+    theme(axis.text.x = element_text(size=6, 
+                                     angle = 90, 
+                                     hjust=1, 
+                                     vjust=0.5),
           axis.text.y = element_text(size=6)) +
     ylab("microbe") +
     xlab("metabolite") +
@@ -912,8 +941,6 @@ p
 ggsave("../figures/microbe-metabo-heatmap.pdf", plot=p,height = 10, width = 8)
 ggsave("../figures/microbe-metabo-heatmap.png", plot=p,height = 10, width = 8)
 ```
-
-
 
 ## Random effect for humanized group + experiment
 
@@ -1116,5 +1143,3 @@ table(sig_intx$microbe)[table(sig_intx$microbe) %>%
     knitr::kable(caption = "Microbes with most frequent significant relationships with microbes",
                  col.names = c("Microbe", "Frequency"))
 ```
-
-
