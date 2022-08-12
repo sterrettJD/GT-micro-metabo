@@ -474,7 +474,7 @@ results_dffilt_lme$sig <- ifelse(test = results_dffilt_lme$p > 0.05, # check bas
                              # if p < 0.05, see if this remains after fdr correction
                              no = ifelse(test = results_dffilt_lme$fdr_p > 0.05,
                                          yes = "p < 0.05",
-                                         no = "fdr p < 0.05"))
+                                         no = "FDR p < 0.05"))
 
 table(results_dffilt_lme$sig) %>% knitr::kable(caption = "Significance levels for regressions")
 
@@ -492,10 +492,15 @@ volcano_df$intx<- paste(sapply(volcano_df$microbe,
                                function(x) str_split(x, "f_")[[1]][2]), 
                         ":", 
                         volcano_df$metabolite)
+volcano_df$intx <- sapply(volcano_df$intx,
+       function(x){
+           if(str_split(x," : ")[[1]][1]=="g") {NA} else {x}
+           }
+)
 
 volcano_df$label[
-    volcano_df$sig == "fdr p < 0.05"
-    ] <- volcano_df$intx[volcano_df$sig == "fdr p < 0.05"]
+    volcano_df$sig == "FDR p < 0.05"
+    ] <- volcano_df$intx[volcano_df$sig == "FDR p < 0.05"]
 
 # If label microbe was NA, make the whole label NA
 volcano_df$label[
@@ -506,10 +511,15 @@ volcano_df$label[
 p <- ggplot(data=volcano_df, aes(x=beta, y=-log10(p), col=sig, label=label)) + 
     geom_point() + 
     geom_text_repel(size = 2,
-                    max.overlaps = 40) +
+                    max.overlaps = 50) +
     scale_color_manual(values=c("red", "blue", "black")) +
-    theme(legend.title=element_blank())
+    theme(legend.title=element_blank()) +
+    theme_bw() +
+    labs(col="")
 p
+
+ggsave("../figures/LME-microbe-metabolite-volcano.png")
+ggsave("../figures/LME-microbe-metabolite-volcano.pdf")
 
 ```
 
