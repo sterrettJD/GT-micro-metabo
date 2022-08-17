@@ -515,7 +515,7 @@ p <- ggplot(data=volcano_df, aes(x=beta, y=-log10(p), col=sig, label=label)) +
     scale_color_manual(values=c("red", "blue", "black")) +
     theme(legend.title=element_blank()) +
     theme_bw() +
-    labs(col="")
+    labs(col="", x=expression(beta))
 p
 
 ggsave("../figures/LME-microbe-metabolite-volcano.png")
@@ -525,7 +525,7 @@ ggsave("../figures/LME-microbe-metabolite-volcano.pdf")
 
 ```{r sig_lme_tables, echo=F}
 sig_intx <- results_dffilt_lme %>% 
-    filter(sig == "fdr p < 0.05") 
+    filter(sig == "FDR p < 0.05") 
     
 sig_intx[order(sig_intx$p),
          c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
@@ -943,7 +943,8 @@ p <- ggplot(heatmap_df_long %>%
                          space ="Lab",
                          limits=c(min(heatmap_df_long$plotbeta),
                                   max(heatmap_df_long$plotbeta)),
-                        name="sqrt beta")
+                        name=expression(sqrt(beta))
+    )
 
 
 p
