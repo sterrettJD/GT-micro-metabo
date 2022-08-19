@@ -893,8 +893,7 @@ heatmap_df_long$plotbeta <- heatmap_df_long$beta %>%
 
 heatmap_df_long$plotmetabolite <- heatmap_df_long$metabolite %>%
     sapply(function(x) substring(x, 1, nchar(x)-6)) %>%
-    sapply(function(x) gsub("z_", ",", x, fixed=TRUE)) %>%
-    sapply(function(x) str_wrap(x, width=25))
+    sapply(function(x) gsub("z_", ",", x, fixed=TRUE))
 
 # heatmap_df_long$plotmetabolite %>% unique() %>% as.data.frame() %>% write.table("metabo_name_mapper.txt", sep="\t")
 
@@ -914,7 +913,9 @@ heatmap_df_long$plotmetabolite <- sapply(heatmap_df_long$plotmetabolite,
        function(x){
            gsub(x=query(name_hash, x), 
                 pattern="_", replacement=" ")
-       })
+       }) 
+# %>%
+#        sapply(function(x) str_wrap(x, width=70))
 
 
 
@@ -934,8 +935,8 @@ p <- ggplot(heatmap_df_long %>%
                                      hjust=1, 
                                      vjust=0.5),
           axis.text.y = element_text(size=6)) +
-    ylab("microbe") +
-    xlab("metabolite") +
+    ylab("Microbe") +
+    xlab("Metabolite") +
     scale_color_gradient2(midpoint=0,
                          low="blue",
                          mid="grey",
