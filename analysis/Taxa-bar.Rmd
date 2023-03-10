@@ -14,7 +14,8 @@ pacman::p_load(tidyverse,
                phyloseq,
                patchwork,
                microshades,
-               cowplot)
+               cowplot,
+               magrittr)
 ```
 
 # Load
@@ -22,12 +23,85 @@ pacman::p_load(tidyverse,
 pseq <- qiime2R::qza_to_phyloseq(feature="../microbiome/filtered_table_GT.qza",
                                  taxonomy="../microbiome/taxonomy_GT.qza",
                                  metadata="../metadata/mapping_nocomment.tsv")
+
 taxonomy.table <- pseq %>% tax_table()
+
 
 ```
 
-# Microshades
-```{r}
+# Microshades {.tabset}
+## Phylum -> Order
+```{r, warning=F, echo=F}
+# prep the microshades colors
+mdf_prep <- prep_mdf(pseq, subgroup_level="Order")
+# sort the phylum names
+phylum_table <- tax_glom(pseq, taxrank="Phylum", ) %>% otu_table()
+phyla.otunames <- rownames(phylum_table)
+
+phylums <- taxonomy.table[phyla.otunames,"Phylum"]
+
+sorted_phylums <- phylums[order(rowSums(phylum_table), decreasing=T)]
+# create the colors object
+color_objs_GP <- create_color_dfs(mdf_prep, selected_groups=sorted_phylums[5:1], 
+                                  cvd = TRUE, subgroup_level="Order")
+# Extract
+mdf_GP <- color_objs_GP$mdf
+cdf_GP <- color_objs_GP$cdf
+# create a custom legend
+GP_legend <-custom_legend(mdf_GP, cdf_GP, 
+                          legend_key_size=unit(0.4, "cm"),
+                          legend_text_size=10, subgroup_level="Order")
+
+# plot
+plot <- plot_microshades(mdf_GP, cdf_GP)
+plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
+  theme(legend.position = "none")  +
+  #theme(axis.text.x = element_blank()) +
+  facet_grid(~PID, scales="free_x", space="free_x"
+             )
+
+multi <- plot_grid(plot_1, GP_legend,  rel_widths = c(1, .25))
+multi
+ggsave("../figures/taxa-bar-phyum-genus-microshades.pdf",plot=multi,height=10,width=10)
+```
+
+## Phylum -> Family
+```{r, warning=F, echo=F}
+# prep the microshades colors
+mdf_prep <- prep_mdf(pseq, subgroup_level="Family")
+# sort the phylum names
+phylum_table <- tax_glom(pseq, taxrank="Phylum", ) %>% otu_table()
+phyla.otunames <- rownames(phylum_table)
+
+phylums <- taxonomy.table[phyla.otunames,"Phylum"]
+
+sorted_phylums <- phylums[order(rowSums(phylum_table), decreasing=T)]
+# create the colors object
+color_objs_GP <- create_color_dfs(mdf_prep, selected_groups=sorted_phylums[5:1], 
+                                  cvd = TRUE, subgroup_level="Family")
+# Extract
+mdf_GP <- color_objs_GP$mdf
+cdf_GP <- color_objs_GP$cdf
+# create a custom legend
+GP_legend <-custom_legend(mdf_GP, cdf_GP, 
+                          legend_key_size=unit(0.4, "cm"),
+                          legend_text_size=10, subgroup_level="Family")
+
+# plot
+plot <- plot_microshades(mdf_GP, cdf_GP)
+plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
+  theme(legend.position = "none")  +
+  #theme(axis.text.x = element_blank()) +
+  facet_grid(~PID, scales="free_x", space="free_x"
+             )
+
+multi <- plot_grid(plot_1, GP_legend,  rel_widths = c(1, .25))
+multi
+```
+
+
+## Phylum -> Genus
+```{r, warning=F, echo=F}
 # prep the microshades colors
 mdf_prep <- prep_mdf(pseq, subgroup_level="Genus")
 # sort the phylum names
@@ -38,25 +112,41 @@ phylums <- taxonomy.table[phyla.otunames,"Phylum"]
 
 sorted_phylums <- phylums[order(rowSums(phylum_table), decreasing=T)]
 # create the colors object
-color_objs_GP <- create_color_dfs(mdf_prep, selected_groups = sorted_phylums[5:1], 
-                                  cvd = TRUE)
+color_objs_GP <- create_color_dfs(mdf_prep, selected_groups=sorted_phylums[5:1], 
+                                  cvd = TRUE, subgroup_level="Genus")
 # Extract
 mdf_GP <- color_objs_GP$mdf
 cdf_GP <- color_objs_GP$cdf
 # create a custom legend
 GP_legend <-custom_legend(mdf_GP, cdf_GP, 
                           legend_key_size=unit(0.4, "cm"),
-                          legend_text_size=10)
+                          legend_text_size=10, subgroup_level="Genus")
 
 # plot
 plot <- plot_microshades(mdf_GP, cdf_GP)
 plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
   theme(legend.position = "none")  +
-  theme(axis.text.x = element_blank()) +
+  #theme(axis.text.x = element_blank()) +
   facet_grid(~PID, scales="free_x", space="free_x"
              )
 
 multi <- plot_grid(plot_1, GP_legend,  rel_widths = c(1, .25))
 multi
-ggsave("../figures/taxa-bar-phyum-genus-microshades.pdf",plot=multi,height=10,width=10)
+#ggsave("../figures/taxa-bar-phyum-genus-microshades.pdf",plot=multi,height=10,width=10)
+```
+
+```{r}
+temp_phylum_table <- phylum_table
+rownames(temp_phylum_table) <- phylums
+
+taxonomy.table <- taxonomy.table %>% as.data.frame()
+Turici.otunames <- taxonomy.table %>%
+    filter(Genus=="Turicibacter") %>% 
+    rownames()
+
+otu.table <- pseq %>% otu_table() %>% as.data.frame()
+rel.otu.table <- ( t(otu.table)/colSums(otu.table) ) %>% t()
+rel.otu.table[Turici.otunames,"GT.GF1_CG"]
+
+rel.otu.table
 ```
