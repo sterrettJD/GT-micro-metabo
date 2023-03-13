@@ -89,18 +89,22 @@ for (x in row.names(genus)){
     new_genus_sample_ids <- c(new_genus_sample_ids, sampleid)
 }
 
-# for (i in 1:length(new_genus_sample_ids)){
-#    print(paste0("Mapping ", rownames(genus)[i], 
-#                 " to ", new_genus_sample_ids[i]))
-#}
-
 rownames(genus) <- new_genus_sample_ids
 
 # sort dataframes
- genus <- genus[order(as.numeric(rownames(genus))),,drop=FALSE]
- metadata <- metadata[order(as.numeric(rownames(metadata))),,drop=FALSE]
- aqueous <- aqueous[order(as.numeric(rownames(aqueous))),,drop=FALSE]
- lipids <- lipids[order(as.numeric(rownames(lipids))),,drop=FALSE]
+genus <- genus[order(as.numeric(rownames(genus))),,drop=FALSE]
+metadata <- metadata[order(as.numeric(rownames(metadata))),,drop=FALSE]
+aqueous <- aqueous[order(as.numeric(rownames(aqueous))),,drop=FALSE]
+lipids <- lipids[order(as.numeric(rownames(lipids))),,drop=FALSE]
+ 
+# remove the germ-free mice because with them we mostly get signal from the 
+# GF vs control differences
+non_controls <- metadata$PID!="Control"
+genus <- genus[non_controls,]
+metadata <- metadata[non_controls,]
+aqueous <- aqueous[non_controls,]
+lipids <- lipids[non_controls,]
+
 ```
 
 # Transform data
@@ -108,13 +112,14 @@ rownames(genus) <- new_genus_sample_ids
 ```{r transform_data, echo=F}
 # hist before transformation
 print("Histograms before transformation")
-hist(genus[, 1:4])
+hist(genus[, 1])
 
 # arcsinh transform microbiome data
 genus <- genus %>% mutate_all(function(x) log(x + sqrt(x^2 + 1)))
 
 # hist after transformation
 print("Histograms after arcsinh transformation")
+
 hist(genus[, 1:4])
 
 
@@ -126,6 +131,10 @@ hist(genus[, 1:4])
 ```{r sparsity, echo=F}
 # microbiome
 print("Microbiome feature sparsity")
+feature_sparsity <- genus %>% sapply(function(x) coop::sparsity(as.matrix(x)))
+# only include features found in > 10% of samples
+genus <- genus[, ( (1-feature_sparsity)>0.1 )]
+genus_names <- colnames(genus)
 feature_sparsity <- genus %>% sapply(function(x) coop::sparsity(as.matrix(x)))
 hist(feature_sparsity, breaks=10)
 
@@ -160,6 +169,7 @@ feat_name_mapped <- data.frame(new=names(lm_df), old=names(all_df))
 # Janet Seibert's suggested dffits threshold
 dffits_thresh <- 4
 
+i <- 1; j <- 1
 # create function to parallelize
 run_lm <- function(i, j){
     microbe <- feat_name_mapped[feat_name_mapped$old==genus_names[i], 
@@ -177,13 +187,13 @@ run_lm <- function(i, j){
     mod <- lm(formula, curr_lm_df)
     
     # extract p and beta
-    p <- coef(summary(mod))[microbe,"Pr(>|t|)"]
+    p <- summary(mod)$coefficients[microbe,"Pr(>|t|)"]
     my_beta <- coef(summary(mod))[microbe,"Estimate"]
-    
+
     # calculate maximum influence of any point
     dffits_df <- as.data.frame(dffits(mod))
-    max_influence <- max(abs(dffits_df))
-    
+    max_influence <- max(abs(dffits_df), na.rm = T)
+
     # add new results to df
     new_results <- list(microbe, metabolite, p, my_beta, max_influence)
     return(new_results)
@@ -191,7 +201,7 @@ run_lm <- function(i, j){
 
 #setup parallel backend to use many processors
 cores <- detectCores()
-cl <- makeCluster(cores[1]-1) #not to overload your computer
+cl <- makeCluster(cores[1]-2) #not to overload your computer
 doParallel::registerDoParallel(cl)
 
 registerDoSNOW(cl) # not sure what this is
@@ -210,17 +220,18 @@ ptm <- proc.time()
 y <- foreach(i=1:iterations_i, 
              .combine=cbind, 
              .options.snow = opts) %:%
-    foreach(j=1:iterations_j, 
-            .combine=cbind, 
-            .options.snow = opts) %dopar% {
-                progress(i)
-                run_lm(i,j)
-            }
+        foreach(j=1:iterations_j, 
+                .combine=cbind, 
+                .options.snow = opts) %dopar% {
+                    progress(i)
+                    run_lm(i,j)
+                }
 
 print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
 
 #stop cluster
 stopCluster(cl)
+
 ```
 
 ### Assessing regression results
@@ -234,7 +245,6 @@ results_parallel$metabolite <- unlist(y[2,])
 results_parallel$p <- unlist(y[3,])
 results_parallel$beta <- unlist(y[4,])
 results_parallel$max_influence <- unlist(y[5,])
-
 
 hist(results_parallel$beta, breaks=100)
 
@@ -346,7 +356,7 @@ table(named_sig_intx$metabolite)[table(named_sig_intx$metabolite) %>%
 table(sig_intx$microbe)[table(sig_intx$microbe) %>% 
                                order(decreasing=T)] %>% 
     head(10) %>% 
-    knitr::kable(caption = "Microbes with most frequent significant relationships with microbes",
+    knitr::kable(caption = "Microbes with most frequent significant relationships with metabolites",
                  col.names = c("Microbe", "Frequency"))
 ```
 
@@ -398,46 +408,46 @@ run_lme <- function(i, j){
 
 # Commented out to only run when desired, not when knitting, since it takes 20+ min to run locally
 
-# #setup parallel backend to use many processors
-# cores <- detectCores()
-# cl <- makeCluster(cores[1]-1) #not to overload your computer
-# doParallel::registerDoParallel(cl)
-# 
-# registerDoSNOW(cl) # not sure what this is
-# iterations_i <- ncol(genus)
-# iterations_j <- ncol(metabo_df)
-# pb <- txtProgressBar(max = iterations_i*iterations_j, style = 3)
-# progress <- function(n) setTxtProgressBar(pb, n)
-# opts <- list(progress = progress)
-# 
-# 
-# results_lme <- data.frame(matrix(nrow=ncol(genus)*ncol(metabo_df),
-#                                       ncol=5))
-# names(results_lme) <- c("microbe", "metabolite", "p", "beta", "max_influence")
-# 
-# ptm <- proc.time()
-# y_lme <- foreach(i=1:iterations_i,
-#              .combine=cbind,
-#              .options.snow = opts) %:%
-#     foreach(j=1:iterations_j,
-#             .combine=cbind,
-#             .options.snow = opts) %dopar% {
-#                 progress(i)
-#                 run_lme(i,j)
-#             }
-# 
-# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
-# 
-# #stop cluster
-# stopCluster(cl)
-# 
-# results_lme$microbe <- unlist(y_lme[1,])
-# results_lme$metabolite <- unlist(y_lme[2,])
-# results_lme$p <- unlist(y_lme[3,])
-# results_lme$beta <- unlist(y_lme[4,])
-# results_lme$max_influence <- unlist(y_lme[5,])
-# 
-# write.csv(results_lme, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_results.csv")
+#setup parallel backend to use many processors
+cores <- detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+doParallel::registerDoParallel(cl)
+
+registerDoSNOW(cl) # not sure what this is
+iterations_i <- ncol(genus)
+iterations_j <- ncol(metabo_df)
+pb <- txtProgressBar(max = iterations_i*iterations_j, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+
+results_lme <- data.frame(matrix(nrow=ncol(genus)*ncol(metabo_df),
+                                      ncol=5))
+names(results_lme) <- c("microbe", "metabolite", "p", "beta", "max_influence")
+
+ptm <- proc.time()
+y_lme <- foreach(i=1:iterations_i,
+             .combine=cbind,
+             .options.snow = opts) %:%
+    foreach(j=1:iterations_j,
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                progress(i)
+                run_lme(i,j)
+            }
+
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
+#stop cluster
+stopCluster(cl)
+
+results_lme$microbe <- unlist(y_lme[1,])
+results_lme$metabolite <- unlist(y_lme[2,])
+results_lme$p <- unlist(y_lme[3,])
+results_lme$beta <- unlist(y_lme[4,])
+results_lme$max_influence <- unlist(y_lme[5,])
+
+write.csv(results_lme, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_results.csv")
 
 results_lme <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_results.csv")
 
@@ -634,31 +644,31 @@ results_lme_genus <- data.frame(matrix(nrow=(ncol(genus)^2 - ncol(genus))/2,
 names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
 
 ptm <- proc.time()
-# y_lme <- foreach(i=1:ncol(genus),
-#              .combine=cbind,
-#              .options.snow = opts) %:%
-#     foreach(j=1:ncol(genus),
-#             .combine=cbind,
-#             .options.snow = opts) %dopar% {
-#                 if(j>i){
-#                     feature_1 <- genus_names[[i]]
-#                     feature_2 <- genus_names[[j]]
-#                     
-#                     
-#                     
-#                     run_lme_within(feature_1, feature_2)
-# 
-#                 }
-#             }
-# 
-# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
-# 
-# 
-# results_lme_genus$feature_1 <- unlist(y_lme[1,])
-# results_lme_genus$feature_2 <- unlist(y_lme[2,])
-# results_lme_genus$p <- unlist(y_lme[3,])
-# results_lme_genus$beta <- unlist(y_lme[4,])
-# results_lme_genus$max_influence <- unlist(y_lme[5,])
+y_lme <- foreach(i=1:ncol(genus),
+             .combine=cbind,
+             .options.snow = opts) %:%
+    foreach(j=1:ncol(genus),
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                if(j>i){
+                    feature_1 <- genus_names[[i]]
+                    feature_2 <- genus_names[[j]]
+
+
+
+                    run_lme_within(feature_1, feature_2)
+
+                }
+            }
+
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
+
+results_lme_genus$feature_1 <- unlist(y_lme[1,])
+results_lme_genus$feature_2 <- unlist(y_lme[2,])
+results_lme_genus$p <- unlist(y_lme[3,])
+results_lme_genus$beta <- unlist(y_lme[4,])
+results_lme_genus$max_influence <- unlist(y_lme[5,])
 
 
 # metabolomics
@@ -674,37 +684,37 @@ results_lme_metabo <- data.frame(matrix(nrow=(ncol(metabo_df)^2 - ncol(metabo_df
 names(results_lme_metabo) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
 
 ptm <- proc.time()
-# y_lme <- foreach(i=1:ncol(metabo_df),
-#              .combine=cbind,
-#              .options.snow = opts) %:%
-#     foreach(j=1:ncol(metabo_df),
-#             .combine=cbind,
-#             .options.snow = opts) %dopar% {
-#                 if(j>i){
-#                     feature_1 <- names(metabo_df)[[i]]
-#                     feature_2 <- names(metabo_df)[[j]]
-#                     
-#                     run_lme_within(feature_1, feature_2, 
-#                                    scale_features = T)
-#                     
-#                 }
-#             }
-# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
- 
+y_lme <- foreach(i=1:ncol(metabo_df),
+             .combine=cbind,
+             .options.snow = opts) %:%
+    foreach(j=1:ncol(metabo_df),
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                if(j>i){
+                    feature_1 <- names(metabo_df)[[i]]
+                    feature_2 <- names(metabo_df)[[j]]
+
+                    run_lme_within(feature_1, feature_2,
+                                   scale_features = T)
+
+                }
+            }
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
 #stop cluster
 stopCluster(cl)
 
-# results_lme_metabo$feature_1 <- unlist(y_lme[1,])
-# results_lme_metabo$feature_2 <- unlist(y_lme[2,])
-# results_lme_metabo$p <- unlist(y_lme[3,])
-# results_lme_metabo$beta <- unlist(y_lme[4,])
-# results_lme_metabo$max_influence <- unlist(y_lme[5,])
-# 
-# results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
-# 
-# 
-# write.csv(results_lme_within, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
-# 
+results_lme_metabo$feature_1 <- unlist(y_lme[1,])
+results_lme_metabo$feature_2 <- unlist(y_lme[2,])
+results_lme_metabo$p <- unlist(y_lme[3,])
+results_lme_metabo$beta <- unlist(y_lme[4,])
+results_lme_metabo$max_influence <- unlist(y_lme[5,])
+
+results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
+
+
+write.csv(results_lme_within, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
+
 results_lme_within <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
 
 ```
@@ -911,7 +921,7 @@ sapply(metabo_name_mapper$Old,
 
 heatmap_df_long$plotmetabolite <- sapply(heatmap_df_long$plotmetabolite,
        function(x){
-           gsub(x=query(name_hash, x), 
+           gsub(x, #x=query(name_hash, x), 
                 pattern="_", replacement=" ")
        }) 
 # %>%
@@ -928,7 +938,7 @@ p <- ggplot(heatmap_df_long %>%
                 alpha=(-log10(p))/max(-log10(p)),
                 shape=p<0.05) ) + 
     geom_point() + 
-    scale_y_discrete(labels = ) +
+    scale_x_discrete() +
     theme_minimal() +
     theme(axis.text.x = element_text(size=6, 
                                      angle = 90, 
@@ -956,10 +966,10 @@ ggsave("../figures/microbe-metabo-heatmap.png", plot=p,height = 10, width = 8)
 
 ## Random effect for humanized group + experiment
 
-Adding a random effect for humanized microbiome ID for a formula of metabolite \~ microbe + (1\|humanized_id)
+Adding a random effect for humanized microbiome ID for a formula of metabolite \~ microbe + (1\|humanized_id) + (1\|experiment)
 
 1.  Scaled each metabolite to have a mean 0 and sd 1, so regression coefficients are comparable
-2.  Ran regressions on each microbe-metabolite combination (metabolite \~ microbe + (1\|humanized_id))
+2.  Ran regressions on each microbe-metabolite combination (metabolite \~ microbe + (1\|humanized_id) + (1\|experiment))
 3.  Extracted the regression coefficient, p value, and maximum influence of any sample on the regression
 
 ```{r run_lme2s, echo=F}
@@ -998,48 +1008,48 @@ run_lme2 <- function(i, j){
 
 # Commented out to only run when desired, not when knitting, since it takes 20+ min to run locally
 
-#setup parallel backend to use many processors
-# cores <- detectCores()
-# cl <- makeCluster(cores[1]-1) #not to overload your computer
-# doParallel::registerDoParallel(cl)
-# 
-# registerDoSNOW(cl) # not sure what this is
-# iterations_i <- ncol(genus)
-# iterations_j <- ncol(metabo_df)
-# pb <- txtProgressBar(max = iterations_i*iterations_j, style = 3)
-# progress <- function(n) setTxtProgressBar(pb, n)
-# opts <- list(progress = progress)
-# 
-# 
-# results_lme2 <- data.frame(matrix(nrow=ncol(genus)*ncol(metabo_df),
-#                                        ncol=5))
-# names(results_lme2) <- c("microbe", "metabolite", "p", "beta", "max_influence")
-# 
-# ptm <- proc.time()
-# y_lme2 <- foreach(i=1:iterations_i,
-#              .combine=cbind,
-#              .options.snow = opts) %:%
-#     foreach(j=1:iterations_j,
-#             .combine=cbind,
-#             .options.snow = opts) %dopar% {
-#                 progress(i)
-#                 run_lme2(i,j)
-#             }
-# 
-# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
-# 
-# #stop cluster
-# stopCluster(cl)
-# #
-# results_lme2$microbe <- unlist(y_lme2[1,])
-# results_lme2$metabolite <- unlist(y_lme2[2,])
-# results_lme2$p <- unlist(y_lme2[3,])
-# results_lme2$beta <- unlist(y_lme2[4,])
-# results_lme2$max_influence <- unlist(y_lme2[5,])
-# 
-# write.csv(results_lme2, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme2_results.csv")
+# setup parallel backend to use many processors
+cores <- detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+doParallel::registerDoParallel(cl)
 
-results_lme2 <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_results.csv")
+registerDoSNOW(cl) # not sure what this is
+iterations_i <- ncol(genus)
+iterations_j <- ncol(metabo_df)
+pb <- txtProgressBar(max = iterations_i*iterations_j, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+
+results_lme2 <- data.frame(matrix(nrow=ncol(genus)*ncol(metabo_df),
+                                       ncol=5))
+names(results_lme2) <- c("microbe", "metabolite", "p", "beta", "max_influence")
+
+ptm <- proc.time()
+y_lme2 <- foreach(i=1:iterations_i,
+             .combine=cbind,
+             .options.snow = opts) %:%
+    foreach(j=1:iterations_j,
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                progress(i)
+                run_lme2(i,j)
+            }
+
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
+#stop cluster
+stopCluster(cl)
+#
+results_lme2$microbe <- unlist(y_lme2[1,])
+results_lme2$metabolite <- unlist(y_lme2[2,])
+results_lme2$p <- unlist(y_lme2[3,])
+results_lme2$beta <- unlist(y_lme2[4,])
+results_lme2$max_influence <- unlist(y_lme2[5,])
+
+write.csv(results_lme2, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme2_results.csv")
+
+results_lme2 <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme2_results.csv")
 
 ```
 
