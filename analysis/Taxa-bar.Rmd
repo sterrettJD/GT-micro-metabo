@@ -132,3 +132,32 @@ make_microshades_phylum(no.na.pseq, "Family")
 make_microshades_phylum(no.na.pseq, "Genus")
 ```
 
+# Replace NA with better unclassified
+```{r}
+
+curr <- taxonomy.table[6]; above <- taxonomy.table[6-1]
+rep_na_with_unclassified_above <- function(curr, above){
+    # curr is the current taxonomic level vector
+    # above is the vector of the next taxonomic level above curr
+    # e.g., curr = column for genus, prev = column for family
+    
+    curr[rownames(is.na(curr)),] <- paste("unclassified", 
+                               above[rownames(is.na(above)),]
+                               )
+    
+    return(curr)
+}
+
+give_informative_unclassified <- function(pseq){
+    this.tax.table <- pseq %>% tax_table() %>% as.data.frame()
+    
+    for( col in ncol(this.tax.table):2){
+        this.tax.table[col] <- rep_na_with_unclassified_above(this.tax.table[col], 
+                                                              this.tax.table[col-1])
+    }
+    
+    return(this.tax.table)
+}
+
+give_informative_unclassified(pseq)
+```
