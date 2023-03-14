@@ -30,10 +30,10 @@ taxonomy.table <- pseq %>% tax_table()
 ```
 
 # Microshades {.tabset}
-## Phylum -> Order
-```{r, warning=F, echo=F}
-# prep the microshades colors
-mdf_prep <- prep_mdf(pseq, subgroup_level="Order")
+```{r}
+make_microshades_phylum <- function(pseq, subgroup){
+    # prep the microshades colors
+mdf_prep <- prep_mdf(pseq, subgroup_level=subgroup)
 # sort the phylum names
 phylum_table <- tax_glom(pseq, taxrank="Phylum", ) %>% otu_table()
 phyla.otunames <- rownames(phylum_table)
@@ -43,14 +43,14 @@ phylums <- taxonomy.table[phyla.otunames,"Phylum"]
 sorted_phylums <- phylums[order(rowSums(phylum_table), decreasing=T)]
 # create the colors object
 color_objs_GP <- create_color_dfs(mdf_prep, selected_groups=sorted_phylums[5:1], 
-                                  cvd = TRUE, subgroup_level="Order")
+                                  cvd = TRUE, subgroup_level=subgroup)
 # Extract
 mdf_GP <- color_objs_GP$mdf
 cdf_GP <- color_objs_GP$cdf
 # create a custom legend
 GP_legend <-custom_legend(mdf_GP, cdf_GP, 
                           legend_key_size=unit(0.4, "cm"),
-                          legend_text_size=10, subgroup_level="Order")
+                          legend_text_size=10, subgroup_level=subgroup)
 
 # plot
 plot <- plot_microshades(mdf_GP, cdf_GP)
@@ -62,78 +62,28 @@ plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion
 
 multi <- plot_grid(plot_1, GP_legend,  rel_widths = c(1, .25))
 multi
+}
+
+```
+## Phylum -> Order
+```{r, warning=F, echo=F}
+make_microshades_phylum(pseq, "Order")
+
 ggsave("../figures/taxa-bar-phyum-genus-microshades.pdf",plot=multi,height=10,width=10)
 ```
 
 ## Phylum -> Family
 ```{r, warning=F, echo=F}
-# prep the microshades colors
-mdf_prep <- prep_mdf(pseq, subgroup_level="Family")
-# sort the phylum names
-phylum_table <- tax_glom(pseq, taxrank="Phylum", ) %>% otu_table()
-phyla.otunames <- rownames(phylum_table)
-
-phylums <- taxonomy.table[phyla.otunames,"Phylum"]
-
-sorted_phylums <- phylums[order(rowSums(phylum_table), decreasing=T)]
-# create the colors object
-color_objs_GP <- create_color_dfs(mdf_prep, selected_groups=sorted_phylums[5:1], 
-                                  cvd = TRUE, subgroup_level="Family")
-# Extract
-mdf_GP <- color_objs_GP$mdf
-cdf_GP <- color_objs_GP$cdf
-# create a custom legend
-GP_legend <-custom_legend(mdf_GP, cdf_GP, 
-                          legend_key_size=unit(0.4, "cm"),
-                          legend_text_size=10, subgroup_level="Family")
-
-# plot
-plot <- plot_microshades(mdf_GP, cdf_GP)
-plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
-  theme(legend.position = "none")  +
-  #theme(axis.text.x = element_blank()) +
-  facet_grid(~PID, scales="free_x", space="free_x"
-             )
-
-multi <- plot_grid(plot_1, GP_legend,  rel_widths = c(1, .25))
-multi
+make_microshades_phylum(pseq, "Family")
 ```
 
 
 ## Phylum -> Genus
 ```{r, warning=F, echo=F}
-# prep the microshades colors
-mdf_prep <- prep_mdf(pseq, subgroup_level="Genus")
-# sort the phylum names
-phylum_table <- tax_glom(pseq, taxrank="Phylum", ) %>% otu_table()
-phyla.otunames <- rownames(phylum_table)
-
-phylums <- taxonomy.table[phyla.otunames,"Phylum"]
-
-sorted_phylums <- phylums[order(rowSums(phylum_table), decreasing=T)]
-# create the colors object
-color_objs_GP <- create_color_dfs(mdf_prep, selected_groups=sorted_phylums[5:1], 
-                                  cvd = TRUE, subgroup_level="Genus")
-# Extract
-mdf_GP <- color_objs_GP$mdf
-cdf_GP <- color_objs_GP$cdf
-# create a custom legend
-GP_legend <-custom_legend(mdf_GP, cdf_GP, 
-                          legend_key_size=unit(0.4, "cm"),
-                          legend_text_size=10, subgroup_level="Genus")
-
-# plot
-plot <- plot_microshades(mdf_GP, cdf_GP)
-plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
-  theme(legend.position = "none")  +
-  #theme(axis.text.x = element_blank()) +
-  facet_grid(~PID, scales="free_x", space="free_x"
-             )
-
-multi <- plot_grid(plot_1, GP_legend,  rel_widths = c(1, .25))
-multi
-#ggsave("../figures/taxa-bar-phyum-genus-microshades.pdf",plot=multi,height=10,width=10)
+make_microshades_phylum(pseq, "Genus")
 ```
+
+# Check relative abundances
 
 ```{r}
 temp_phylum_table <- phylum_table
@@ -150,3 +100,35 @@ rel.otu.table[Turici.otunames,"GT.GF1_CG"]
 
 rel.otu.table
 ```
+
+# Redo after making these unclassified taxa say "unclassified" {.tabset}
+```{r}
+
+rep_na_with_unclassified <- function(x){
+    x[is.na(x)] <- "unclassified"
+    return(x)
+}
+
+no.na.taxonomy.table <- taxonomy.table %>% 
+    mutate_all(rep_na_with_unclassified) %>% 
+    as.matrix()
+
+no.na.pseq <- pseq
+tax_table(no.na.pseq) <- tax_table(no.na.taxonomy.table)
+```
+
+## Phylum -> Order
+```{r, warning=F, echo=F}
+make_microshades_phylum(no.na.pseq, "Order")
+```
+
+## Phylum -> Family
+```{r, warning=F, echo=F}
+make_microshades_phylum(no.na.pseq, "Family")
+```
+
+## Phylum -> Genus
+```{r, warning=F, echo=F}
+make_microshades_phylum(no.na.pseq, "Genus")
+```
+
