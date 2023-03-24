@@ -18,15 +18,28 @@ pacman::p_load(tidyverse,
                magrittr)
 ```
 
-# Load
+# Introduction
+## Document focus & Microshades issue
+In this document, I demonstrate an issue with the way relative abundances are calculated in Microshades. That is, when taxa have not been assigned taxonomy at the taxonomic level used for microshading (such as genus), they are dropped from all consideration, and relative abundances are calculated **after** these taxa are removed. However, relative abundances calculated without taxa unassigned at the genus (or other) level are not representative of the actual relative abundances. 
+
+## Dataset
+Our dataset shows an extremely clear example of this. This dataset consists of 16S sequencing data from 20 humanized mice (microbiomes were humanized in pairs, meaning 2 mice received the same human microbiome) + 9 "germ-free" mice. There was some contamination in the "germ-free" mice, but they remained with very simple (low diversity) microbiome composition, dominated by just a few ASVs from the phylum Firmicutes.
+
+## How I noticed this issue
+One of these ASVs that was high relative abundance in the "germ-free" controls belonged to the family peptostreptococcaceae. In a few "germ-free" samples, it makes up >75% of the microbiome. However, it did not have a genus-level taxonomic classification. Therefore, when I make a microshades plot with microshading at the genus level, it is suddenly >90% *Turicibacter*, which is **not** in the peptostreptococcaceae family. This is a massive change in the presentation of the data, and you can see it by clicking through the tabbed microshades plots below.
+
+This issue also leads to changes in the non-microshaded colors. For example, see the samples humanized with microbiome #74. When microshading at the genus level, the firmicutes:bacteroidetes ratio (purple vs blue) appears to be half of what it actually is. **I'd like to reiterate that a lack of a genus-level taxonomic classification is changing the visualization of known classifications at the phylum level.**
+
+## Solution
+In this document, I show 2 potential solutions. One is much more naive; it simply renames any NA to be "unclassified". You can see as a proof of concept that the phylum level coloring (e.g. purple vs blue) no longer gets affected by unclassified taxa. The second solution is the one I prefer. It loops through the taxonomy table and labels any unassigned levels as "unassigned_<parent>", where parent is the lowest level of taxonomy assigned above the unassigned level. In the case of our ASV that is in the peptostreptococcaceae family but has an unassigned genus, it labeled it "Unassigned_Peptostreptococcaceae", which shows up at the proper relative abundance in the resulting microshades plot.
+
+# Load data
 ```{r}
 pseq <- qiime2R::qza_to_phyloseq(feature="../microbiome/filtered_table_GT.qza",
                                  taxonomy="../microbiome/taxonomy_GT.qza",
                                  metadata="../metadata/mapping_nocomment.tsv")
 
 taxonomy.table <- pseq %>% tax_table() %>% as.data.frame()
-
-
 ```
 
 # Microshades {.tabset}
@@ -66,6 +79,10 @@ make_microshades_phylum <- function(pseq, subgroup){
 
 ```
 
+In the Phylum-Genus plot above, it appears that the genus Turicibacter makes up >90% in our controls. However, we know this isn't the case if we look at the Phylum-Family plot (Turicibacteraceae is not high relative abundance). I double-check this in the section below, and Turicibacter is at no more than 23% in any sample.
+
+While this may be an extreme example, it could have considerable ramifications here and in other cases. And in some cases, these might not be caught. For example, in the Phylum-Genus plot, the Fimicutes:Bacteroidetes ratio appears to be half of what it actually is for the samples from humanized microbiome #74. That could lead to a lot of confusion when comparing statistical results to the taxa bar plot!
+
 ## Phylum -> Order
 ```{r, warning=F, echo=F}
 make_microshades_phylum(pseq, "Order")
@@ -85,9 +102,9 @@ make_microshades_phylum(pseq, "Genus")
 ```
 
 # Check relative abundances
-
-```{r, eval=F}
+```{r}
 temp_phylum_table <- tax_glom(pseq, taxrank="Phylum") %>% otu_table()
+phyla.otunames <- rownames(temp_phylum_table)
 rownames(temp_phylum_table) <- taxonomy.table[phyla.otunames,"Phylum"]
 
 taxonomy.table <- taxonomy.table %>% as.data.frame()
@@ -97,9 +114,10 @@ Turici.otunames <- taxonomy.table %>%
 
 otu.table <- pseq %>% otu_table() %>% as.data.frame()
 rel.otu.table <- ( t(otu.table)/colSums(otu.table) ) %>% t()
-rel.otu.table[Turici.otunames,"GT.GF1_CG"]
+print(paste("Max relative abundance of Turicibacter in any sample",
+            max(rel.otu.table[Turici.otunames,]))
+      )
 
-rel.otu.table
 ```
 
 # Redo after making these unclassified taxa say "unclassified" {.tabset}
@@ -134,10 +152,8 @@ make_microshades_phylum(no.na.pseq, "Family")
 make_microshades_phylum(no.na.pseq, "Genus")
 ```
 
-# Replace NA with better unclassified
-```{r, eval=F}
-
-curr <- taxonomy.table[6]; above <- taxonomy.table[6-1]
+# Replace NA with informative unclassified {.tabset}
+```{r}
 
 rep_na_with_unclassified_above <- function(pseq){
     # get the tax table
@@ -170,10 +186,28 @@ rep_na_with_unclassified_above <- function(pseq){
         tax.tab[asv,] <- curr.asv
     }
     
-    return (tax.tab)
+    return (as.matrix(tax.tab))
     
 }
 
 new.tax.table <- rep_na_with_unclassified_above(pseq)
-  
+
+pseq.inf.unclass <- pseq
+tax_table(pseq.inf.unclass) <- new.tax.table
+```
+
+
+## Phylum -> Order
+```{r, warning=F, echo=F}
+make_microshades_phylum(pseq.inf.unclass, "Order")
+```
+
+## Phylum -> Family
+```{r, warning=F, echo=F}
+make_microshades_phylum(pseq.inf.unclass, "Family")
+```
+
+## Phylum -> Genus
+```{r, warning=F, echo=F}
+make_microshades_phylum(pseq.inf.unclass, "Genus")
 ```
