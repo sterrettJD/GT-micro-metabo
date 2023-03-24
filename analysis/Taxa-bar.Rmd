@@ -24,7 +24,7 @@ pseq <- qiime2R::qza_to_phyloseq(feature="../microbiome/filtered_table_GT.qza",
                                  taxonomy="../microbiome/taxonomy_GT.qza",
                                  metadata="../metadata/mapping_nocomment.tsv")
 
-taxonomy.table <- pseq %>% tax_table()
+taxonomy.table <- pseq %>% tax_table() %>% as.data.frame()
 
 
 ```
@@ -33,43 +33,44 @@ taxonomy.table <- pseq %>% tax_table()
 ```{r}
 make_microshades_phylum <- function(pseq, subgroup){
     # prep the microshades colors
-mdf_prep <- prep_mdf(pseq, subgroup_level=subgroup)
-# sort the phylum names
-phylum_table <- tax_glom(pseq, taxrank="Phylum", ) %>% otu_table()
-phyla.otunames <- rownames(phylum_table)
-
-phylums <- taxonomy.table[phyla.otunames,"Phylum"]
-
-sorted_phylums <- phylums[order(rowSums(phylum_table), decreasing=T)]
-# create the colors object
-color_objs_GP <- create_color_dfs(mdf_prep, selected_groups=sorted_phylums[5:1], 
-                                  cvd = TRUE, subgroup_level=subgroup)
-# Extract
-mdf_GP <- color_objs_GP$mdf
-cdf_GP <- color_objs_GP$cdf
-# create a custom legend
-GP_legend <-custom_legend(mdf_GP, cdf_GP, 
-                          legend_key_size=unit(0.4, "cm"),
-                          legend_text_size=10, subgroup_level=subgroup)
-
-# plot
-plot <- plot_microshades(mdf_GP, cdf_GP)
-plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
-  theme(legend.position = "none")  +
-  #theme(axis.text.x = element_blank()) +
-  facet_grid(~PID, scales="free_x", space="free_x"
-             )
-
-multi <- plot_grid(plot_1, GP_legend,  rel_widths = c(1, .25))
-multi
+    mdf_prep <- prep_mdf(pseq, subgroup_level=subgroup)
+    # sort the phylum names
+    phylum_table <- tax_glom(pseq, taxrank="Phylum", ) %>% otu_table()
+    phyla.otunames <- rownames(phylum_table)
+    
+    phylums <- taxonomy.table[phyla.otunames,"Phylum"]
+    
+    sorted_phylums <- phylums[order(rowSums(phylum_table), decreasing=T)]
+    # create the colors object
+    color_objs_GP <- create_color_dfs(mdf_prep, selected_groups=sorted_phylums[5:1], 
+                                      cvd = TRUE, subgroup_level=subgroup)
+    # Extract
+    mdf_GP <- color_objs_GP$mdf
+    cdf_GP <- color_objs_GP$cdf
+    # create a custom legend
+    GP_legend <-custom_legend(mdf_GP, cdf_GP, 
+                              legend_key_size=unit(0.4, "cm"),
+                              legend_text_size=10, subgroup_level=subgroup)
+    
+    # plot
+    plot <- plot_microshades(mdf_GP, cdf_GP)
+    plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
+      theme(legend.position = "none")  +
+      #theme(axis.text.x = element_blank()) +
+      facet_grid(~PID, scales="free_x", space="free_x"
+                 )
+    
+    multi <- plot_grid(plot_1, GP_legend,  rel_widths = c(1, .25))
+    multi
 }
 
 ```
+
 ## Phylum -> Order
 ```{r, warning=F, echo=F}
 make_microshades_phylum(pseq, "Order")
 
-ggsave("../figures/taxa-bar-phyum-genus-microshades.pdf",plot=multi,height=10,width=10)
+#ggsave("../figures/taxa-bar-phyum-genus-microshades.pdf",plot=multi,height=10,width=10)
 ```
 
 ## Phylum -> Family
@@ -85,9 +86,9 @@ make_microshades_phylum(pseq, "Genus")
 
 # Check relative abundances
 
-```{r}
-temp_phylum_table <- phylum_table
-rownames(temp_phylum_table) <- phylums
+```{r, eval=F}
+temp_phylum_table <- tax_glom(pseq, taxrank="Phylum") %>% otu_table()
+rownames(temp_phylum_table) <- taxonomy.table[phyla.otunames,"Phylum"]
 
 taxonomy.table <- taxonomy.table %>% as.data.frame()
 Turici.otunames <- taxonomy.table %>%
@@ -111,6 +112,7 @@ rep_na_with_unclassified <- function(x){
 
 no.na.taxonomy.table <- taxonomy.table %>% 
     mutate_all(rep_na_with_unclassified) %>% 
+    as.data.frame() %>%
     as.matrix()
 
 no.na.pseq <- pseq
@@ -133,31 +135,45 @@ make_microshades_phylum(no.na.pseq, "Genus")
 ```
 
 # Replace NA with better unclassified
-```{r}
+```{r, eval=F}
 
 curr <- taxonomy.table[6]; above <- taxonomy.table[6-1]
-rep_na_with_unclassified_above <- function(curr, above){
-    # curr is the current taxonomic level vector
-    # above is the vector of the next taxonomic level above curr
-    # e.g., curr = column for genus, prev = column for family
-    
-    curr[rownames(is.na(curr)),] <- paste("unclassified", 
-                               above[rownames(is.na(above)),]
-                               )
-    
-    return(curr)
-}
 
-give_informative_unclassified <- function(pseq){
-    this.tax.table <- pseq %>% tax_table() %>% as.data.frame()
+rep_na_with_unclassified_above <- function(pseq){
+    # get the tax table
+    tax.tab <- pseq %>% tax_table() %>% as.data.frame()
+    # get the number of taxonomic levels
+    cols <- ncol(tax.tab)
     
-    for( col in ncol(this.tax.table):2){
-        this.tax.table[col] <- rep_na_with_unclassified_above(this.tax.table[col], 
-                                                              this.tax.table[col-1])
+    # for each asv
+    for (asv in rownames(tax.tab)){
+        # subset
+        curr.asv <- tax.tab[asv,]
+        # initialize parent unfound
+        parent.found <- F; i <- cols
+        # This starts at the lowest taxonomic level, 
+        # then moves up the taxonomy (the if condition) until it finds non-NA
+        # If it hits a non-NA, it replaces all lower levels of taxonomy with 
+        # "Unclassified <parent>" and sets parent.found to TRUE, so the loop
+        # will exit. 
+        # Then, curr.asv replaces the old row in the taxonomic table.
+        while(!parent.found){
+            if(is.na(curr.asv[i])){
+                i <- i-1
+            }
+            else{
+                parent.found <- T
+                cols.to.update <- (i+1):(cols+1)
+                curr.asv[cols.to.update[cols.to.update <= cols]] <- paste0("Unnasigned_", curr.asv[i])
+            }
+        }
+        tax.tab[asv,] <- curr.asv
     }
     
-    return(this.tax.table)
+    return (tax.tab)
+    
 }
 
-give_informative_unclassified(pseq)
+new.tax.table <- rep_na_with_unclassified_above(pseq)
+  
 ```
