@@ -893,26 +893,21 @@ heatmap_df_p_long <- heatmap_df_p %>%
 heatmap_df_long$p <- heatmap_df_p_long$p
 
 
+
 heatmap_df_long$plotmicrobe <- heatmap_df_long$microbe %>%
-    sapply(function(x) str_split(x, pattern=";__")[[1]]) %>%
-    sapply(function(x) ifelse(x[length(x)] %in% c("1855d", "ph2", "smb53"),
+    sapply(function(x) str_split(x, pattern=";[a-z]__")[[1]]) %>%
+    sapply(function(x) ifelse(x[length(x)] %in% c(""),
                               no=x[length(x)], 
-                              yes=ifelse(x[length(x)]=="1855d",
-                                         no=paste(x[length(x)-2],
-                                                  x[length(x)]),
-                                         yes=paste(x[length(x)-3],
-                                                   x[length(x)-1],
-                                                   x[length(x)]))
+                              yes=paste("family", x[length(x)-2])
                               )
-           )
+           ) %>%
+    sapply(function(x) gsub(";__", "", x, fixed=TRUE))
 
-heatmap_df_long %>% 
-    filter(grepl("1855d", microbe)) %>% 
-    select(microbe) %>% 
-    head(1)
+heatmap_df_long <- heatmap_df_long %>% 
+    filter(microbe!="k__Bacteria;__;__;__;__;__")
 
-
-heatmap_df_long$annotated <- heatmap_df_long$metabolite %>% sapply(function(x) !grepl("^[c][\\d]{2,}", x, perl=T))
+heatmap_df_long$annotated <- heatmap_df_long$metabolite %>% 
+    sapply(function(x) !grepl("^[C][\\d]{2,}", x, perl=T))
 
 
 heatmap_df_long$plotbeta <- heatmap_df_long$beta %>%
@@ -923,6 +918,9 @@ heatmap_df_long$plotbeta <- heatmap_df_long$beta %>%
 heatmap_df_long$plotmetabolite <- heatmap_df_long$metabolite %>%
     sapply(function(x) substring(x, 1, nchar(x)-6)) %>%
     sapply(function(x) gsub("z_", ",", x, fixed=TRUE))
+
+heatmap_df_long$plotmetabolite <- heatmap_df_long$plotmetabolite %>%
+    sapply(function(x) str_split(x, pattern="\\ C")[[1]][1])
 
 
 p <- ggplot(heatmap_df_long %>% 
@@ -936,11 +934,11 @@ p <- ggplot(heatmap_df_long %>%
     geom_point() + 
     scale_x_discrete() +
     theme_minimal() +
-    theme(axis.text.x = element_text(size=6, 
-                                     angle = 90, 
+    theme(axis.text.x = element_text(size=8, 
+                                     angle = 45, 
                                      hjust=1, 
-                                     vjust=0.5),
-          axis.text.y = element_text(size=6)) +
+                                     vjust=1),
+          axis.text.y = element_text(size=8)) +
     ylab("Microbe") +
     xlab("Metabolite") +
     scale_color_gradient2(midpoint=0,
