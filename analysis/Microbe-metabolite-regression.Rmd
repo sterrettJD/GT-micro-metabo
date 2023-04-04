@@ -353,7 +353,7 @@ table(sig_intx$metabolite)[table(sig_intx$metabolite) %>%
                  col.names = c("Metabolite", "Frequency"))
 
 sig_intx$annotated <- sig_intx$metabolite %>% 
-    sapply(function(x) !grepl("^[c][\\d]{3,}", 
+    sapply(function(x) !grepl("^[C][\\d]{3,}", 
                               x, perl=T))
 
 named_sig_intx <- sig_intx %>% filter(annotated == TRUE)
@@ -498,6 +498,8 @@ results_dffilt_lme$sig <- ifelse(test = results_dffilt_lme$p > 0.05, # check bas
                              no = ifelse(test = results_dffilt_lme$fdr_p > 0.05,
                                          yes = "p < 0.05",
                                          no = "FDR p < 0.05"))
+results_dffilt_lme$microbe <- clean_name_mapper[results_dffilt_lme$microbe,]
+results_dffilt_lme$metabolite <- clean_name_mapper[results_dffilt_lme$metabolite,]
 
 table(results_dffilt_lme$sig) %>% knitr::kable(caption = "Significance levels for regressions")
 
@@ -506,13 +508,13 @@ volcano_df <- results_dffilt_lme
 volcano_df$label <- NA
 
 volcano_df$annotated <- volcano_df$metabolite %>% 
-    sapply(function(x) !grepl("^[c][\\d]{2,}", 
+    sapply(function(x) !grepl("^[C][\\d]{2,}", 
                               x, perl=T))
 volcano_df$metabolite[volcano_df$annotated==F] <- "unannotated"
 
 # create labels for the volcano plot
 volcano_df$intx<- paste(sapply(volcano_df$microbe, 
-                               function(x) str_split(x, "f_")[[1]][2]), 
+                               function(x) str_split(x, "f__")[[1]][2]), 
                         ":", 
                         volcano_df$metabolite)
 volcano_df$intx <- sapply(volcano_df$intx,
@@ -569,7 +571,7 @@ table(sig_intx$metabolite)[table(sig_intx$metabolite) %>%
                  col.names = c("Metabolite", "Frequency"))
 
 sig_intx$annotated <- sig_intx$metabolite %>% 
-    sapply(function(x) !grepl("^[c][\\d]{3,}", 
+    sapply(function(x) !grepl("^[C][\\d]{3,}", 
                               x, perl=T))
 
 named_sig_intx <- sig_intx %>% filter(annotated == TRUE)
@@ -639,94 +641,94 @@ run_lme_within <- function(feature_1, feature_2, scale_features=F, sparsity_cuto
 # Commented out to only run when desired, not when knitting
 
 #setup parallel backend to use many processors
-cores <- detectCores()
-cl <- makeCluster(cores[1]-1) #not to overload your computer
-doParallel::registerDoParallel(cl)
- 
-registerDoSNOW(cl)
-
-pb <- txtProgressBar(max = ncol(genus)^2, style = 3)
-progress <- function(n) setTxtProgressBar(pb, n)
-opts <- list(progress = progress)
-
-# run microbe-microbe regressions
-# dimensions should be (num features^2 - num features )/ 2 
-# because it's only half of corr matrix and self corr will be 1
-results_lme_genus <- data.frame(matrix(nrow=(ncol(genus)^2 - ncol(genus))/2,
-                                       ncol=5))
-names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
-
-ptm <- proc.time()
-y_lme <- foreach(i=1:ncol(genus),
-             .combine=cbind,
-             .options.snow = opts) %:%
-    foreach(j=1:ncol(genus),
-            .combine=cbind,
-            .options.snow = opts) %dopar% {
-                if(j>i){
-                    feature_1 <- genus_names[[i]]
-                    feature_2 <- genus_names[[j]]
-
-
-
-                    run_lme_within(feature_1, feature_2)
-
-                }
-            }
-
-print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
-
-
-results_lme_genus$feature_1 <- unlist(y_lme[1,])
-results_lme_genus$feature_2 <- unlist(y_lme[2,])
-results_lme_genus$p <- unlist(y_lme[3,])
-results_lme_genus$beta <- unlist(y_lme[4,])
-results_lme_genus$max_influence <- unlist(y_lme[5,])
-
-
-# metabolomics
-pb <- txtProgressBar(max = ncol(metabo_df)^2, style = 3)
-progress <- function(n) setTxtProgressBar(pb, n)
-opts <- list(progress = progress)
-
-# setup results dataframe
-# dimensions should be (num features^2 - num features )/ 2 
-# because it's only half of corr matrix and self corr will be 1
-results_lme_metabo <- data.frame(matrix(nrow=(ncol(metabo_df)^2 - ncol(metabo_df))/2,
-                                       ncol=5))
-names(results_lme_metabo) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
-
-ptm <- proc.time()
-y_lme <- foreach(i=1:ncol(metabo_df),
-             .combine=cbind,
-             .options.snow = opts) %:%
-    foreach(j=1:ncol(metabo_df),
-            .combine=cbind,
-            .options.snow = opts) %dopar% {
-                if(j>i){
-                    feature_1 <- names(metabo_df)[[i]]
-                    feature_2 <- names(metabo_df)[[j]]
-
-                    run_lme_within(feature_1, feature_2,
-                                   scale_features = T)
-
-                }
-            }
-print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
-
-#stop cluster
-stopCluster(cl)
-
-results_lme_metabo$feature_1 <- unlist(y_lme[1,])
-results_lme_metabo$feature_2 <- unlist(y_lme[2,])
-results_lme_metabo$p <- unlist(y_lme[3,])
-results_lme_metabo$beta <- unlist(y_lme[4,])
-results_lme_metabo$max_influence <- unlist(y_lme[5,])
-
-results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
-
-
-write.csv(results_lme_within, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
+# cores <- detectCores()
+# cl <- makeCluster(cores[1]-1) #not to overload your computer
+# doParallel::registerDoParallel(cl)
+#  
+# registerDoSNOW(cl)
+# 
+# pb <- txtProgressBar(max = ncol(genus)^2, style = 3)
+# progress <- function(n) setTxtProgressBar(pb, n)
+# opts <- list(progress = progress)
+# 
+# # run microbe-microbe regressions
+# # dimensions should be (num features^2 - num features )/ 2 
+# # because it's only half of corr matrix and self corr will be 1
+# results_lme_genus <- data.frame(matrix(nrow=(ncol(genus)^2 - ncol(genus))/2,
+#                                        ncol=5))
+# names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
+# 
+# ptm <- proc.time()
+# y_lme <- foreach(i=1:ncol(genus),
+#              .combine=cbind,
+#              .options.snow = opts) %:%
+#     foreach(j=1:ncol(genus),
+#             .combine=cbind,
+#             .options.snow = opts) %dopar% {
+#                 if(j>i){
+#                     feature_1 <- genus_names[[i]]
+#                     feature_2 <- genus_names[[j]]
+# 
+# 
+# 
+#                     run_lme_within(feature_1, feature_2)
+# 
+#                 }
+#             }
+# 
+# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+# 
+# 
+# results_lme_genus$feature_1 <- unlist(y_lme[1,])
+# results_lme_genus$feature_2 <- unlist(y_lme[2,])
+# results_lme_genus$p <- unlist(y_lme[3,])
+# results_lme_genus$beta <- unlist(y_lme[4,])
+# results_lme_genus$max_influence <- unlist(y_lme[5,])
+# 
+# 
+# # metabolomics
+# pb <- txtProgressBar(max = ncol(metabo_df)^2, style = 3)
+# progress <- function(n) setTxtProgressBar(pb, n)
+# opts <- list(progress = progress)
+# 
+# # setup results dataframe
+# # dimensions should be (num features^2 - num features )/ 2 
+# # because it's only half of corr matrix and self corr will be 1
+# results_lme_metabo <- data.frame(matrix(nrow=(ncol(metabo_df)^2 - ncol(metabo_df))/2,
+#                                        ncol=5))
+# names(results_lme_metabo) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
+# 
+# ptm <- proc.time()
+# y_lme <- foreach(i=1:ncol(metabo_df),
+#              .combine=cbind,
+#              .options.snow = opts) %:%
+#     foreach(j=1:ncol(metabo_df),
+#             .combine=cbind,
+#             .options.snow = opts) %dopar% {
+#                 if(j>i){
+#                     feature_1 <- names(metabo_df)[[i]]
+#                     feature_2 <- names(metabo_df)[[j]]
+# 
+#                     run_lme_within(feature_1, feature_2,
+#                                    scale_features = T)
+# 
+#                 }
+#             }
+# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+# 
+# #stop cluster
+# stopCluster(cl)
+# 
+# results_lme_metabo$feature_1 <- unlist(y_lme[1,])
+# results_lme_metabo$feature_2 <- unlist(y_lme[2,])
+# results_lme_metabo$p <- unlist(y_lme[3,])
+# results_lme_metabo$beta <- unlist(y_lme[4,])
+# results_lme_metabo$max_influence <- unlist(y_lme[5,])
+# 
+# results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
+# 
+# 
+# write.csv(results_lme_within, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
 
 results_lme_within <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
 
@@ -740,6 +742,7 @@ results_lme_within <- results_lme_within %>%
     filter(max_influence < 4) %>%
     select(-V1) #drop the added column
 
+
 results_lme_between <- results_dffilt_lme %>% 
     rename("feature_1" = "microbe",
             "feature_2" = "metabolite") %>%
@@ -748,7 +751,10 @@ results_lme_between <- results_dffilt_lme %>%
            -V1)
 
 edgelist_df <- rbind(results_lme_between, results_lme_within)
-    
+
+edgelist_df$feature_1 <- clean_name_mapper[edgelist_df$feature_1,]
+edgelist_df$feature_2 <- clean_name_mapper[edgelist_df$feature_2,]
+
 edgelist_df$fdr_p <- p.adjust(edgelist_df$p)
 edgelist_for_graph <- edgelist_df %>% 
     filter(fdr_p < 0.05) %>% 
@@ -888,7 +894,7 @@ heatmap_df_long$p <- heatmap_df_p_long$p
 
 
 heatmap_df_long$plotmicrobe <- heatmap_df_long$microbe %>%
-    sapply(function(x) x<- str_split(x, pattern="_")[[1]]) %>%
+    sapply(function(x) str_split(x, pattern=";__")[[1]]) %>%
     sapply(function(x) ifelse(x[length(x)] %in% c("1855d", "ph2", "smb53"),
                               no=x[length(x)], 
                               yes=ifelse(x[length(x)]=="1855d",
@@ -917,29 +923,6 @@ heatmap_df_long$plotbeta <- heatmap_df_long$beta %>%
 heatmap_df_long$plotmetabolite <- heatmap_df_long$metabolite %>%
     sapply(function(x) substring(x, 1, nchar(x)-6)) %>%
     sapply(function(x) gsub("z_", ",", x, fixed=TRUE))
-
-# heatmap_df_long$plotmetabolite %>% unique() %>% as.data.frame() %>% write.table("metabo_name_mapper.txt", sep="\t")
-
-# map the names to more visually friendly plotting names
-metabo_name_mapper <- fread("metabo_name_mapper_for_use.csv")
-
-name_hash <- hashmap()
-sapply(metabo_name_mapper$Old, 
-               function(x) {
-    insert(name_hash, 
-           x, 
-           metabo_name_mapper[metabo_name_mapper$Old == x, New])
-}
-)
-
-heatmap_df_long$plotmetabolite <- sapply(heatmap_df_long$plotmetabolite,
-       function(x){
-           gsub(x, #x=query(name_hash, x), 
-                pattern="_", replacement=" ")
-       }) 
-# %>%
-#        sapply(function(x) str_wrap(x, width=70))
-
 
 
 p <- ggplot(heatmap_df_long %>% 
