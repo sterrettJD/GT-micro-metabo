@@ -2,7 +2,9 @@
 title: "Taxa-bar"
 author: "John Sterrett"
 date: "2023-03-07"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -16,6 +18,7 @@ pacman::p_load(tidyverse,
                microshades,
                cowplot,
                magrittr)
+#setwd("analysis")
 ```
 
 # Introduction
@@ -79,25 +82,27 @@ make_microshades_phylum <- function(pseq, subgroup){
 
 ```
 
-In the Phylum-Genus plot above, it appears that the genus Turicibacter makes up >90% in our controls. However, we know this isn't the case if we look at the Phylum-Family plot (Turicibacteraceae is not high relative abundance). I double-check this in the section below, and Turicibacter is at no more than 23% in any sample.
+**Summary: Click through the tabs below to see the changes in phylum level relative abundances based on the sub-level for microshades.**
+
+In the Phylum->Genus plot below, it appears that the genus Turicibacter makes up >90% in our controls. However, we know this isn't the case if we look at the Phylum-Family plot (Turicibacteraceae is not high relative abundance). I double-check this in the section below, and Turicibacter is at no more than 23% in any sample.
 
 While this may be an extreme example, it could have considerable ramifications here and in other cases. And in some cases, these might not be caught. For example, in the Phylum-Genus plot, the Fimicutes:Bacteroidetes ratio appears to be half of what it actually is for the samples from humanized microbiome #74. That could lead to a lot of confusion when comparing statistical results to the taxa bar plot!
 
 ## Phylum -> Order
-```{r, warning=F, echo=F}
+```{r, warning=F, echo=F, fig.height=8}
 make_microshades_phylum(pseq, "Order")
 
 #ggsave("../figures/taxa-bar-phyum-genus-microshades.pdf",plot=multi,height=10,width=10)
 ```
 
 ## Phylum -> Family
-```{r, warning=F, echo=F}
+```{r, warning=F, echo=F, fig.height=8}
 make_microshades_phylum(pseq, "Family")
 ```
 
 
 ## Phylum -> Genus
-```{r, warning=F, echo=F}
+```{r, warning=F, echo=F, fig.height=8}
 make_microshades_phylum(pseq, "Genus")
 ```
 
@@ -121,6 +126,8 @@ print(paste("Max relative abundance of Turicibacter in any sample",
 ```
 
 # Redo after making these unclassified taxa say "unclassified" {.tabset}
+
+If you click through the tabs, you can see that changing the microshades sub-level no longer changes the phylum relative abundances. However, this isn't the most elegant solution.
 ```{r}
 
 rep_na_with_unclassified <- function(x){
@@ -138,23 +145,22 @@ tax_table(no.na.pseq) <- tax_table(no.na.taxonomy.table)
 ```
 
 ## Phylum -> Order
-```{r, warning=F, echo=F}
+```{r, warning=F, echo=F, fig.height=8}
 make_microshades_phylum(no.na.pseq, "Order")
 ```
 
 ## Phylum -> Family
-```{r, warning=F, echo=F}
+```{r, warning=F, echo=F, fig.height=8}
 make_microshades_phylum(no.na.pseq, "Family")
 ```
 
 ## Phylum -> Genus
-```{r, warning=F, echo=F}
+```{r, warning=F, echo=F, fig.height=8}
 make_microshades_phylum(no.na.pseq, "Genus")
 ```
 
 # Replace NA with informative unclassified {.tabset}
 ```{r}
-
 rep_na_with_unclassified_above <- function(pseq){
     # get the tax table
     tax.tab <- pseq %>% tax_table() %>% as.data.frame()
@@ -185,7 +191,7 @@ rep_na_with_unclassified_above <- function(pseq){
         }
         tax.tab[asv,] <- curr.asv
     }
-    
+    # returns the tax table matrix
     return (as.matrix(tax.tab))
     
 }
@@ -196,18 +202,31 @@ pseq.inf.unclass <- pseq
 tax_table(pseq.inf.unclass) <- new.tax.table
 ```
 
-
 ## Phylum -> Order
-```{r, warning=F, echo=F}
+```{r, warning=F, echo=F, fig.height=8}
 make_microshades_phylum(pseq.inf.unclass, "Order")
 ```
 
 ## Phylum -> Family
-```{r, warning=F, echo=F}
+```{r, warning=F, echo=F, fig.height=8}
 make_microshades_phylum(pseq.inf.unclass, "Family")
 ```
 
 ## Phylum -> Genus
-```{r, warning=F, echo=F}
+```{r, warning=F, echo=F, fig.height=8}
 make_microshades_phylum(pseq.inf.unclass, "Genus")
+ggsave("../figures/phylum_genus_taxa_bar.pdf", height=8, width=10.5)
+```
+
+# Old vs new tax table
+Can compare old vs new taxonomy
+```{r}
+taxonomy.table %>% 
+    head(n=10) %>% 
+    knitr::kable(caption="Old Taxonomy")
+
+new.tax.table %>% 
+    as.data.frame() %>%
+    head(n=10) %>% 
+    knitr::kable(caption="New Taxonomy")
 ```
