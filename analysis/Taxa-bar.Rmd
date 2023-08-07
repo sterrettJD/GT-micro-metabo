@@ -230,3 +230,39 @@ new.tax.table %>%
     head(n=10) %>% 
     knitr::kable(caption="New Taxonomy")
 ```
+
+# Characterize top ASVs in GF mice
+```{r}
+metadata <- sample_data(pseq)
+gf <- metadata$PID=="Control"
+top.gf.asvs.order <- order(rowSums(rel.otu.table[,gf]), decreasing=T)
+
+top.gf.asvs <- head(rel.otu.table[top.gf.asvs.order,]) %>%
+    rownames()
+# get mean relative abund of each asv
+top.gf.asvs.abund <- head(rel.otu.table[top.gf.asvs.order,]) %>%
+    rowSums()
+top.gf.asvs.abund <- top.gf.asvs.abund/sum(gf) # dividing sum by num of samples
+top.gf.asvs.abund <- top.gf.asvs.abund*100
+
+top.gf.asvs.tax <- taxonomy.table[top.gf.asvs,]
+
+# create table
+tax.abund.table <- merge(top.gf.asvs.tax[,c("Class", "Order", 
+                                            "Family", "Genus")],
+                         top.gf.asvs.abund, 
+                         by="row.names")
+tax.abund.table <- tax.abund.table %>% 
+    rename("Relative Abundance"="y",
+           "ASV ID"="Row.names")
+tax.abund.table <- tax.abund.table[order(tax.abund.table$`Relative Abundance`,
+                                   decreasing=T),
+                                   ]
+tax.abund.table %>% 
+    knitr::kable(digits=1)
+
+tax.abund.table$`Relative Abundance` <-tax.abund.table$`Relative Abundance`%>% 
+    round(digits=1)
+
+tax.abund.table %>% write_csv("tax_abund_gf_asvs.csv")
+```
