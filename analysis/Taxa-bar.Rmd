@@ -265,4 +265,35 @@ tax.abund.table$`Relative Abundance` <-tax.abund.table$`Relative Abundance`%>%
     round(digits=1)
 
 tax.abund.table %>% write_csv("tax_abund_gf_asvs.csv")
+
+tax.abund.table
+```
+
+## Blast the rep seqs for these ASVs
+```{r blasting away}
+
+rep.seqs <- qiime2R::read_qza("../microbiome/rep-seqs_GT.qza")$data 
+
+# grab only our seqs
+rep.seqs.of.interest <- rep.seqs %>% as.data.frame()
+rep.seqs.of.interest <- rep.seqs.of.interest[tax.abund.table$`ASV ID`,]
+rep.seqs.of.interest <- Biostrings::DNAStringSet(rep.seqs.of.interest)
+
+# get blast 16s db
+if(!dir.exists("16S_ribosomal_RNA")){
+    download.file("https://ftp.ncbi.nlm.nih.gov/blast/db/16S_ribosomal_RNA.tar.gz",
+                  "16S_ribosomal_RNA.tar.gz", mode='wb')
+
+    untar("16S_ribosomal_RNA.tar.gz", exdir="16SMicrobialDB")    
+}
+
+# read in blast db
+bl <- rBLAST::blast(db="./16SMicrobialDB/16S_ribosomal_RNA")
+
+# start blasting
+cl <- predict(bl, rep.seqs.of.interest, BLAST_args = "-perc_identity 99", 
+              custom_format = "qseqid pident length Mismatches stitle")
+cl
+
+
 ```
