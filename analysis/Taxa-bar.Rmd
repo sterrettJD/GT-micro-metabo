@@ -295,5 +295,32 @@ cl <- predict(bl, rep.seqs.of.interest, BLAST_args = "-perc_identity 99",
               custom_format = "qseqid pident length Mismatches stitle")
 cl
 
+tax.abund.table$`ASV ID`
+
+
+```
+
+# Differential abundance testing GF vs HU
+## Genus level
+```{r}
+metadata$GF <- metadata$PID=="Control"
+sample_data(pseq) <- metadata
+pseq.genus <- phyloseq::tax_glom(pseq, taxrank="Genus")
+gf.ancom <- ANCOMBC::ancombc2(pseq.genus, tax_level="Genus", 
+                              fix_formula="GF", p_adj_method="fdr")
+
+res <- gf.ancom$res
+res[res$q_GFTRUE < 0.05,] %>% knitr::kable()
+
+```
+
+## Family level
+```{r}
+pseq.family <- phyloseq::tax_glom(pseq, taxrank="Family")
+gf.ancom <- ANCOMBC::ancombc2(pseq.family, tax_level="Family", 
+                              fix_formula="GF", p_adj_method="fdr")
+
+res <- gf.ancom$res
+res[res$q_GFTRUE < 0.05,] %>% knitr::kable()
 
 ```
