@@ -1,0 +1,1199 @@
+---
+title: "Microbe-metabolite regressions with controls included"
+author: "John Sterrett"
+date: '2022-07-14'
+output:
+html_document: default
+pdf_document: default
+---
+    
+    
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse,
+               lme4, lmerTest,
+               qiime2R,
+               data.table,
+               foreach,
+               parallel,
+               doSNOW,
+               ggrepel,
+               HLMdiag,
+               igraph,
+               r2r)
+
+'%ni%' <- Negate('%in%')
+
+setwd("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis")
+
+
+```
+
+# Load data
+
+```{r load_data, echo=F}
+# read in genus level table
+genus <- read_qza("../microbiome/L6-collapsed-table.qza")$data %>% as.data.frame()
+genus_names <- row.names(genus)
+
+# convert to relative abundance
+genus <- sapply(genus,
+                prop.table) * 100
+genus <- genus %>% as.data.frame(row.names = genus_names)
+
+# check that all colsums are 100
+print(
+    "Checking that all microbiome columns add to 100% (relative abundance)... All unique column sums are below (they should be 100): "
+)
+unique(colSums(genus))
+
+genus <- t(genus) %>% as.data.frame()
+
+
+# read in metadata
+metadata <- fread("../metadata/mapping.tsv", sep = "\t")
+rownames(metadata) <- metadata$`MetaboSampleID`
+
+# read in metabolites
+aqueous <- fread("../metabolome/raw_aqueous.tsv",
+                 sep="\t", header = T) %>% as.data.frame()
+aqueous <- aqueous %>% remove_rownames() %>% column_to_rownames(var="V1")
+
+aqueous <- aqueous[rownames(aqueous) %ni% c("Compound Name", "Retention Time",
+                                            "Measured Retention Time", "Product Mass",
+                                            "QualifierMass", "CASNumber",
+                                            "CompoundType", "ISTDCompoundName", 
+                                            "Mass Column"),]
+aqueous <- mutate_all(aqueous, function(x) as.numeric(as.character(x)))
+
+
+# read in lipids
+lipids <- fread("../metabolome/raw_lipid.tsv",
+                sep="\t",
+                header = T)
+
+rownames(lipids) <- lipids$V1
+lipids <- lipids %>% remove_rownames() %>% column_to_rownames(var="V1")
+
+lipids <- lipids[rownames(lipids) %ni% c("Compound Name", "Retention Time",
+                                         "Measured Retention Time", "Product Mass",
+                                         "QualifierMass", "CASNumber",
+                                         "CompoundType", "ISTDCompoundName", 
+                                         "Mass Column"),]
+lipids <- mutate_all(lipids, function(x) as.numeric(as.character(x)))
+
+# map genus sample ids to metabolomics sample ids
+new_genus_sample_ids <- c()
+for (x in row.names(genus)){
+    sampleid <- metadata[metadata$`#SampleID`==x, "MetaboSampleID"][[1,1]]
+    new_genus_sample_ids <- c(new_genus_sample_ids, sampleid)
+}
+
+rownames(genus) <- new_genus_sample_ids
+
+# sort dataframes
+genus <- genus[order(as.numeric(rownames(genus))),,drop=FALSE]
+metadata <- metadata[order(as.numeric(rownames(metadata))),,drop=FALSE]
+aqueous <- aqueous[order(as.numeric(rownames(aqueous))),,drop=FALSE]
+lipids <- lipids[order(as.numeric(rownames(lipids))),,drop=FALSE]
+
+```
+
+# Transform data
+
+```{r transform_data, echo=F}
+# hist before transformation
+print("Histograms before transformation")
+hist(genus[, 1])
+
+# arcsinh transform microbiome data
+genus <- genus %>% mutate_all(function(x) log(x + sqrt(x^2 + 1)))
+
+# hist after transformation
+print("Histograms after arcsinh transformation")
+
+hist(genus[, 1:4])
+
+
+
+```
+
+# Assess sparsity
+
+```{r sparsity, echo=F}
+# microbiome
+print("Microbiome feature sparsity")
+feature_sparsity <- genus %>% sapply(function(x) coop::sparsity(as.matrix(x)))
+# only include features found in > 10% of samples
+genus <- genus[, ( (1-feature_sparsity)>0.1 )]
+genus_names <- colnames(genus)
+feature_sparsity <- genus %>% sapply(function(x) coop::sparsity(as.matrix(x)))
+hist(feature_sparsity, breaks=10)
+
+# aqueous
+print("Aqueous metabolome feature sparsity")
+feature_sparsity <- aqueous %>% sapply(function(x) coop::sparsity(as.matrix(x)))
+hist(feature_sparsity, breaks=50)
+print("Unique sparsity values are: ")
+unique(feature_sparsity)
+
+# lipids
+print("Lipidome feature sparsity")
+feature_sparsity <- lipids %>% sapply(function(x) coop::sparsity(as.matrix(x)))
+hist(feature_sparsity, breaks=50)
+print("Unique sparsity values are: ")
+unique(feature_sparsity)
+```
+
+# Basic regressions
+
+1.  Scaled each metabolite to have a mean 0 and sd 1, so regression coefficients are comparable
+2.  Ran regressions on each microbe-metabolite combination (metabolite \~ microbe)
+3.  Extracted the regression coefficient, p value, and maximum influence of any sample on the regression
+
+```{r basic_regression, results='hide', echo=F}
+all_df <- cbind(genus, aqueous, lipids)
+metabo_df <- cbind(aqueous, lipids)
+
+clean_name_mapper <- data.frame(colnames(all_df))
+rownames(clean_name_mapper) <- colnames(all_df %>% janitor::clean_names())
+
+tail(clean_name_mapper)
+
+lm_df <- all_df %>% janitor::clean_names()
+feat_name_mapped <- data.frame(new=names(lm_df), old=names(all_df))
+
+# Janet Seibert's suggested dffits threshold
+dffits_thresh <- 4
+
+i <- 1; j <- 1
+# create function to parallelize
+run_lm <- function(i, j){
+    microbe <- feat_name_mapped[feat_name_mapped$old==genus_names[i], 
+                                "new"]
+    metabolite <- feat_name_mapped[feat_name_mapped$old==names(metabo_df)[j], 
+                                   "new"]
+    # scale the metabolite so beta is interpretable
+    curr_lm_df <- lm_df[, c(microbe, metabolite)]
+    curr_lm_df[, metabolite] <- scale(curr_lm_df[, metabolite])
+    
+    # create formula
+    formula <- paste(metabolite, "~", microbe)
+    
+    # run model
+    mod <- lm(formula, curr_lm_df)
+    
+    # extract p and beta
+    p <- summary(mod)$coefficients[microbe,"Pr(>|t|)"]
+    my_beta <- coef(summary(mod))[microbe,"Estimate"]
+    
+    # calculate maximum influence of any point
+    dffits_df <- as.data.frame(dffits(mod))
+    max_influence <- max(abs(dffits_df), na.rm = T)
+    
+    # add new results to df
+    new_results <- list(microbe, metabolite, p, my_beta, max_influence)
+    return(new_results)
+}
+
+#setup parallel backend to use many processors
+cores <- detectCores()
+cl <- makeCluster(cores[1]-2) #not to overload your computer
+doParallel::registerDoParallel(cl)
+
+registerDoSNOW(cl) 
+iterations_i <- ncol(genus)
+iterations_j <- ncol(metabo_df)
+
+print(paste("Running", iterations_i*iterations_j, "iterations"))
+
+
+pb <- txtProgressBar(max = iterations_i*iterations_j, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+
+results_parallel <- data.frame(matrix(nrow=ncol(genus)*ncol(metabo_df), 
+                                      ncol=5))
+names(results_parallel) <- c("microbe", "metabolite", "p", "beta", "max_influence") 
+
+ptm <- proc.time()
+y <- foreach(i=1:iterations_i, 
+             .combine=cbind, 
+             .options.snow = opts) %:%
+    foreach(j=1:iterations_j, 
+            .combine=cbind, 
+            .options.snow = opts) %dopar% {
+                progress(i)
+                run_lm(i,j)
+            }
+
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
+#stop cluster
+stopCluster(cl)
+
+```
+
+### Assessing regression results
+
+First histogram shows the distribution of regression coefficients. Second histogram shows the distribution of maximum influence of any point for each regression. Then, the 50th, 90th, 95th, and 99th percentiles of the maximum influence values for each regression are printed. We will remove any regressions with maximum influence \> 4.
+
+```{r process_and_summarize_results, echo=F}
+
+results_parallel$microbe <- unlist(y[1,])
+results_parallel$metabolite <- unlist(y[2,])
+results_parallel$p <- unlist(y[3,])
+results_parallel$beta <- unlist(y[4,])
+results_parallel$max_influence <- unlist(y[5,])
+
+hist(results_parallel$beta, breaks=100)
+
+hist(results_parallel$max_influence, breaks=20)
+
+quantile(results_parallel$max_influence, c(0.5, 0.9, 0.95, 0.99), na.rm=T)
+
+summary(results_parallel)
+
+```
+
+### Assess significant regressions
+
+p values were false discovery rate (fdr) corrected via a benjamini-hochberg correction. A volcano plot shows beta (the regression coefficient) along the x axis and -log10(uncorrected p value) on the y axis.
+
+```{r lm_results, echo=F, warning=F}
+results_dffilt <- results_parallel %>% 
+    filter(max_influence < 4)
+
+results_dffilt$fdr_p <- results_dffilt$p %>% 
+    p.adjust("BH")
+
+
+results_dffilt$sig <- ifelse(test = results_dffilt$p > 0.05, # check baseline sig
+                             yes = "p > 0.05",
+                             # if p < 0.05, see if this remains after fdr correction
+                             no = ifelse(test = results_dffilt$fdr_p > 0.05,
+                                         yes = "p < 0.05",
+                                         no = "fdr p < 0.05"))
+
+# replace cleaned feature names with old feature names
+results_dffilt$microbe <- clean_name_mapper[results_dffilt$microbe,]
+results_dffilt$metabolite <- clean_name_mapper[results_dffilt$metabolite,]
+
+table(results_dffilt$sig) %>% knitr::kable(caption = "Significance levels for regressions")
+
+
+volcano_df <- results_dffilt
+volcano_df$label <- NA
+
+volcano_df$annotated <- volcano_df$metabolite %>% 
+    sapply(function(x) !grepl("^[C][\\d]{2,}", 
+                              x, perl=T))
+volcano_df$metabolite[volcano_df$annotated==F] <- "unannotated"
+
+# create labels for the volcano plot
+volcano_df$intx<- paste(sapply(volcano_df$microbe, 
+                               function(x) str_split(x, "f__")[[1]][2]), 
+                        ":", 
+                        volcano_df$metabolite)
+
+volcano_df$label[
+    volcano_df$sig == "fdr p < 0.05"
+] <- volcano_df$intx[volcano_df$sig == "fdr p < 0.05"]
+
+# If label microbe was NA, make the whole label NA
+volcano_df$label[
+    volcano_df$label %>% 
+        sapply(function(x) grepl("^[NA]", 
+                                 x, perl=T))] <- NA
+
+p <- ggplot(data=volcano_df, aes(x=beta, y=-log10(p), col=sig, label=label)) + 
+    geom_point() + 
+    geom_text_repel(size = 2,
+                    max.overlaps = 25) +
+    scale_color_manual(values=c("red", "blue", "black")) +
+    theme_bw() +
+    theme(legend.title=element_blank())
+
+p
+
+```
+
+### Tables of significant microbe-metabolite relationships
+
+These are long, but I have them separated into positive correlations and negative correlations (sorted by p value), followed by the most frequent metabolites with significant relationships, then the most frequent annotated metabolites.
+
+```{r sig_tables, echo=F}
+sig_intx <- results_dffilt %>% 
+    filter(sig == "fdr p < 0.05") 
+
+
+sig_intx[order(sig_intx$p),
+         c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
+    filter(beta > 0) %>%
+    knitr::kable(caption = "Positively associated microbes and metabolites")
+
+
+sig_intx[order(sig_intx$p),
+         c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
+    filter(beta < 0) %>%
+    knitr::kable(caption = "Negatively associated microbes and metabolites")
+
+
+table(sig_intx$metabolite)[table(sig_intx$metabolite) %>% 
+                               order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(caption = "Metabolites with most frequent significant relationships with microbes",
+                 col.names = c("Metabolite", "Frequency"))
+
+sig_intx$annotated <- sig_intx$metabolite %>% 
+    sapply(function(x) !grepl("^[C][\\d]{3,}", 
+                              x, perl=T))
+
+named_sig_intx <- sig_intx %>% filter(annotated == TRUE)
+
+table(named_sig_intx$metabolite)[table(named_sig_intx$metabolite) %>%
+                                     order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(col.names = c("Metabolite", "Frequency"),
+                 caption = "Annotated metabolites with most frequent significant relationships with microbes")
+
+
+# microbes
+table(sig_intx$microbe)[table(sig_intx$microbe) %>% 
+                            order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(caption = "Microbes with most frequent significant relationships with metabolites",
+                 col.names = c("Microbe", "Frequency"))
+```
+
+# Mixed effects regressions
+
+## Random effect for humanized group
+
+Adding a random effect for humanized microbiome ID for a formula of metabolite \~ microbe + (1\|humanized_id)
+
+1.  Scaled each metabolite to have a mean 0 and sd 1, so regression coefficients are comparable
+2.  Ran regressions on each microbe-metabolite combination (metabolite \~ microbe + (1\|humanized_id))
+3.  Extracted the regression coefficient, p value, and maximum influence of any sample on the regression
+
+```{r run_lmes, echo=F}
+lme_df <- all_df %>% janitor::clean_names()
+lme_df$PID <- metadata$PID
+
+# Janet Seibert's suggested dffits threshold
+dffits_thresh <- 4
+
+# create function to parallelize
+run_lme <- function(i, j){
+    microbe <- feat_name_mapped[feat_name_mapped$old==genus_names[i], 
+                                "new"]
+    metabolite <- feat_name_mapped[feat_name_mapped$old==names(metabo_df)[j], 
+                                   "new"]
+    # scale the metabolite so beta is interpretable
+    curr_lm_df <- lme_df[, c(microbe, metabolite, "PID")]
+    curr_lm_df[, metabolite] <- scale(curr_lm_df[, metabolite])
+    
+    # create formula
+    formula <- paste0(metabolite, " ~ ", microbe, " + (1|PID)")
+    
+    # run model
+    mod <- lmerTest::lmer(formula, curr_lm_df)
+    
+    # extract p and beta
+    p <- coef(summary(mod))[microbe,"Pr(>|t|)"]
+    my_beta <- coef(summary(mod))[microbe,"Estimate"]
+    
+    # calculate maximum influence of any point
+    dffits_df <- as.data.frame(HLMdiag::mdffits(mod))
+    max_influence <- max(abs(dffits_df))
+    
+    # add new results to df
+    new_results <- list(microbe, metabolite, p, my_beta, max_influence)
+    return(new_results)
+}
+
+# Commented out to only run when desired, not when knitting, since it takes 20+ min to run locally
+
+# setup parallel backend to use many processors
+cores <- detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+doParallel::registerDoParallel(cl)
+
+registerDoSNOW(cl)
+iterations_i <- ncol(genus)
+iterations_j <- ncol(metabo_df)
+pb <- txtProgressBar(max = iterations_i*iterations_j, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+
+results_lme <- data.frame(matrix(nrow=ncol(genus)*ncol(metabo_df),
+                                      ncol=5))
+names(results_lme) <- c("microbe", "metabolite", "p", "beta", "max_influence")
+
+ptm <- proc.time()
+y_lme <- foreach(i=1:iterations_i,
+             .combine=cbind,
+             .options.snow = opts) %:%
+    foreach(j=1:iterations_j,
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                progress(i)
+                run_lme(i,j)
+            }
+
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
+#stop cluster
+stopCluster(cl)
+
+results_lme$microbe <- unlist(y_lme[1,])
+results_lme$metabolite <- unlist(y_lme[2,])
+results_lme$p <- unlist(y_lme[3,])
+results_lme$beta <- unlist(y_lme[4,])
+results_lme$max_influence <- unlist(y_lme[5,])
+
+write.csv(results_lme, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_results_with_GF.csv")
+
+results_lme <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_results_with_GF.csv")
+
+```
+
+### Process LME results
+
+```{r process_and_summarize_lme_results, echo=F}
+
+hist(results_lme$beta, breaks=100)
+
+hist(results_lme$max_influence, breaks=20)
+
+quantile(results_lme$max_influence, c(0.5, 0.9, 0.95, 0.99), na.rm=T)
+
+summary(results_lme)
+
+```
+
+### Assess significant regressions
+
+p values were false discovery rate (fdr) corrected via a benjamini-hochberg correction. A volcano plot shows beta (the regression coefficient) along the x axis and -log10(uncorrected p value) on the y axis.
+
+```{r lme_results, echo=F, warning=F}
+results_dffilt_lme <- results_lme %>% 
+    filter(max_influence < 4)
+
+results_dffilt_lme$fdr_p <- results_dffilt_lme$p %>% 
+    p.adjust("BH")
+
+
+results_dffilt_lme$sig <- ifelse(test = results_dffilt_lme$p > 0.05, # check baseline sig
+                                 yes = "p > 0.05",
+                                 # if p < 0.05, see if this remains after fdr correction
+                                 no = ifelse(test = results_dffilt_lme$fdr_p > 0.05,
+                                             yes = "p < 0.05",
+                                             no = "FDR p < 0.05"))
+results_dffilt_lme$microbe <- clean_name_mapper[results_dffilt_lme$microbe,]
+results_dffilt_lme$metabolite <- clean_name_mapper[results_dffilt_lme$metabolite,]
+
+table(results_dffilt_lme$sig) %>% knitr::kable(caption = "Significance levels for regressions")
+
+
+volcano_df <- results_dffilt_lme
+volcano_df$label <- NA
+
+# search for unannotated compounds
+volcano_df$annotated <- volcano_df$metabolite %>% 
+    sapply(function(x) !grepl("^[C][\\d]{2,}", 
+                              x, perl=T))
+volcano_df$metabolite[volcano_df$annotated==F] <- "unannotated"
+
+# create labels for the volcano plot
+volcano_df$intx<- paste(sapply(volcano_df$microbe, 
+                               function(x) str_split(x, "f__")[[1]][2]), 
+                        ":", 
+                        volcano_df$metabolite)
+volcano_df$intx <- sapply(volcano_df$intx,
+                          function(x){
+                              if(str_split(x," : ")[[1]][1]=="g") {NA} else {x}
+                          }
+)
+
+volcano_df$label[
+    volcano_df$sig == "FDR p < 0.05"
+] <- volcano_df$intx[volcano_df$sig == "FDR p < 0.05"]
+
+# If label microbe was NA, make the whole label NA
+volcano_df$label[
+    volcano_df$label %>% 
+        sapply(function(x) grepl("^[NA]", 
+                                 x, perl=T))] <- NA
+
+# Another form of NA microbe annotation
+volcano_df$label[
+    volcano_df$label %>% 
+        sapply(function(x) grepl(";g__ :", 
+                                 x, perl=T))] <- NA
+
+p <- ggplot(data=volcano_df, aes(x=beta, y=-log10(p), col=sig, label=label)) + 
+    geom_point() + 
+    geom_text_repel(size = 2,
+                    max.overlaps = 30) +
+    scale_color_manual(values=c("red", "blue", "black")) +
+    theme(legend.title=element_blank()) +
+    theme_bw() +
+    labs(col="", x=expression(beta))
+p
+
+ggsave("../figures/LME-microbe-metabolite-volcano_with_GF.png", plot=p, height=8, width=8)
+ggsave("../figures/LME-microbe-metabolite-volcano_with_GF.pdf", plot=p, height=8, width=8)
+
+```
+
+```{r sig_lme_tables, echo=F}
+sig_intx <- results_dffilt_lme %>% 
+    filter(sig == "FDR p < 0.05") 
+
+sig_intx[order(sig_intx$p),
+         c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
+    filter(beta > 0) %>%
+    knitr::kable(caption = "Positively associated microbes and metabolites")
+
+
+sig_intx[order(sig_intx$p),
+         c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
+    filter(beta < 0) %>%
+    knitr::kable(caption = "Negatively associated microbes and metabolites")
+
+
+table(sig_intx$metabolite)[table(sig_intx$metabolite) %>% 
+                               order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(caption = "Metabolites with most frequent significant relationships with microbes",
+                 col.names = c("Metabolite", "Frequency"))
+
+sig_intx$annotated <- sig_intx$metabolite %>% 
+    sapply(function(x) !grepl("^[C][\\d]{3,}", 
+                              x, perl=T))
+
+named_sig_intx <- sig_intx %>% filter(annotated == TRUE)
+
+table(named_sig_intx$metabolite)[table(named_sig_intx$metabolite) %>%
+                                     order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(col.names = c("Metabolite", "Frequency"),
+                 caption = "Annotated metabolites with most frequent significant relationships with microbes")
+
+
+# microbes
+table(sig_intx$microbe)[table(sig_intx$microbe) %>% 
+                            order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(caption = "Microbes with most frequent significant relationships with metabolites",
+                 col.names = c("Microbe", "Frequency"))
+```
+
+### Network
+
+#### Run regressions within datasets
+
+```{r, echo=F}
+# create function to parallelize
+
+run_lme_within <- function(feature_1, feature_2, scale_features=F, sparsity_cutoff=0.95){
+    feature_1 <- feat_name_mapped[feat_name_mapped$old==feature_1, 
+                                  "new"]
+    feature_2 <- feat_name_mapped[feat_name_mapped$old==feature_2, 
+                                  "new"]
+    
+    curr_lm_df <- lme_df[, c(feature_1, feature_2, "PID")]
+    
+    # Only do regression if features are found in more than 5% of samples
+    if( (coop::sparsity(as.matrix(curr_lm_df[,feature_1])) > sparsity_cutoff) ||
+        (coop::sparsity(as.matrix(curr_lm_df[,feature_2])) > sparsity_cutoff)
+    ){
+        return(list(feature_1, feature_2, NA, NA, NA))
+    }
+    
+    if(scale_features==T){
+        # scale so beta is interpretable
+        curr_lm_df[, feature_1] <- scale(curr_lm_df[, feature_1])
+        curr_lm_df[, feature_2] <- scale(curr_lm_df[, feature_2])
+    }
+    
+    # create formula
+    formula <- paste0(feature_2, " ~ ", feature_1, " + (1|PID)")
+    
+    # run model
+    mod <- lmerTest::lmer(formula, curr_lm_df)
+    
+    # extract p and beta
+    p <- coef(summary(mod))[feature_1,"Pr(>|t|)"]
+    my_beta <- coef(summary(mod))[feature_1,"Estimate"]
+    
+    # calculate maximum influence of any point
+    dffits_df <- as.data.frame(HLMdiag::mdffits(mod))
+    max_influence <- max(abs(dffits_df))
+    
+    # add new results to df
+    new_results <- list(feature_1, feature_2, p, my_beta, max_influence)
+    return(new_results)
+}
+
+# Commented out to only run when desired, not when knitting
+
+#setup parallel backend to use many processors
+cores <- detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+doParallel::registerDoParallel(cl)
+
+registerDoSNOW(cl)
+
+pb <- txtProgressBar(max = ncol(genus)^2, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+# run microbe-microbe regressions
+# dimensions should be (num features^2 - num features )/ 2
+# because it's only half of corr matrix and self corr will be 1
+results_lme_genus <- data.frame(matrix(nrow=(ncol(genus)^2 - ncol(genus))/2,
+                                       ncol=5))
+names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
+
+ptm <- proc.time()
+y_lme <- foreach(i=1:ncol(genus),
+             .combine=cbind,
+             .options.snow = opts) %:%
+    foreach(j=1:ncol(genus),
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                if(j>i){
+                    feature_1 <- genus_names[[i]]
+                    feature_2 <- genus_names[[j]]
+
+
+
+                    run_lme_within(feature_1, feature_2)
+
+                }
+            }
+
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
+
+results_lme_genus$feature_1 <- unlist(y_lme[1,])
+results_lme_genus$feature_2 <- unlist(y_lme[2,])
+results_lme_genus$p <- unlist(y_lme[3,])
+results_lme_genus$beta <- unlist(y_lme[4,])
+results_lme_genus$max_influence <- unlist(y_lme[5,])
+
+
+# metabolomics
+pb <- txtProgressBar(max = ncol(metabo_df)^2, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+# setup results dataframe
+# dimensions should be (num features^2 - num features )/ 2
+# because it's only half of corr matrix and self corr will be 1
+results_lme_metabo <- data.frame(matrix(nrow=(ncol(metabo_df)^2 - ncol(metabo_df))/2,
+                                       ncol=5))
+names(results_lme_metabo) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
+
+ptm <- proc.time()
+y_lme <- foreach(i=1:ncol(metabo_df),
+             .combine=cbind,
+             .options.snow = opts) %:%
+    foreach(j=1:ncol(metabo_df),
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                if(j>i){
+                    feature_1 <- names(metabo_df)[[i]]
+                    feature_2 <- names(metabo_df)[[j]]
+
+                    run_lme_within(feature_1, feature_2,
+                                   scale_features = T)
+
+                }
+            }
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
+#stop cluster
+stopCluster(cl)
+
+results_lme_metabo$feature_1 <- unlist(y_lme[1,])
+results_lme_metabo$feature_2 <- unlist(y_lme[2,])
+results_lme_metabo$p <- unlist(y_lme[3,])
+results_lme_metabo$beta <- unlist(y_lme[4,])
+results_lme_metabo$max_influence <- unlist(y_lme[5,])
+
+results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
+
+
+write.csv(results_lme_within, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results_with_GF.csv")
+
+results_lme_within <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results_with_GF.csv")
+
+```
+
+#### Visualize network
+
+```{r viznet, echo=F}
+# filter high max influence
+results_lme_within <- results_lme_within %>% 
+    filter(max_influence < 4) %>%
+    select(-V1) #drop the added column
+
+
+results_lme_between <- results_dffilt_lme %>% 
+    rename("feature_1" = "microbe",
+           "feature_2" = "metabolite") %>%
+    select(-fdr_p,
+           -sig,
+           -V1)
+
+edgelist_df <- rbind(results_lme_between, results_lme_within)
+
+edgelist_df$feature_1 <- clean_name_mapper[edgelist_df$feature_1,]
+edgelist_df$feature_2 <- clean_name_mapper[edgelist_df$feature_2,]
+
+edgelist_df$fdr_p <- p.adjust(edgelist_df$p)
+edgelist_for_graph <- edgelist_df %>% 
+    filter(fdr_p < 0.05) %>% 
+    select(feature_1, feature_2, beta)
+
+# network with all fdr p interactions
+g_all <- edgelist_for_graph[complete.cases(edgelist_for_graph)] %>% 
+    select(-beta) %>% 
+    as.matrix() %>%
+    graph_from_edgelist(directed = F)
+
+degrees_g_all <- degree(g_all, mode="all") %>% 
+    sort(decreasing=T)
+degrees_g_all %>% 
+    head(10) %>% 
+    knitr::kable(caption="Microbes/metabolites with most total FDR significant relationships", 
+                 col.names = c("Frequency"))
+
+# network with only positive interactions
+g_pos <- edgelist_for_graph[complete.cases(edgelist_for_graph)] %>% 
+    filter(beta > 0) %>%
+    select(-beta) %>% 
+    as.matrix() %>%
+    graph_from_edgelist(directed = F)
+
+plot(g_pos, vertex.label=NA, title="Positive interactions network")
+
+degrees_g_pos <- degree(g_pos, mode="all") %>% 
+    sort(decreasing=T)
+
+```
+
+#### Subgraphs of high degree nodes
+
+```{r subgraphs, echo=F}
+print("Highest degree in all fdr sig interactions network")
+for (i in 1:10){
+    feat_neighbors <- g_all %>% neighbors(names(degrees_g_all[i]))
+    
+    g_all %>% subgraph(vids = feat_neighbors) %>% plot()
+}
+
+print("Highest degree in positive fdr sig interactions network")
+
+for (i in 1:10){
+    
+    feat_neighbors <- g_pos %>% neighbors(names(degrees_g_pos[i]))
+    
+    g_pos %>% subgraph(vids = feat_neighbors) %>% plot()
+}
+
+E(g_all)$weight <- edgelist_for_graph[complete.cases(edgelist_for_graph), "beta"]
+
+Eig_cent_pos <- evcent(g_pos)
+Eig_cent_pos$vector %>% head(10) %>% knitr::kable()
+
+Eig_cent_pos_df <- Eig_cent_pos$vector %>% data.frame()
+names(Eig_cent_pos_df) <- c("Eigenvector centrality")
+Eig_cent_pos_df %>% 
+    arrange(desc(`Eigenvector centrality`)) %>% 
+    head(10) %>% knitr::kable(caption="Nodes with highest Eigenvector centrality")
+
+```
+
+#### Heatmap
+
+```{r heatmap_lme}
+# TIME to extract the data for heatmapping
+heatmap_df <- data.frame(
+    matrix(
+        nrow = length(unique(sig_intx$microbe)),
+        ncol = length(unique(sig_intx$metabolite))
+    ),
+    row.names = unique(sig_intx$microbe)
+    #col.names = unique(sig_intx$metabolite)
+)
+colnames(heatmap_df) <- unique(sig_intx$metabolite)
+
+heatmap_df_p <- data.frame(
+    matrix(
+        nrow = length(unique(sig_intx$microbe)),
+        ncol = length(unique(sig_intx$metabolite))
+    ),
+    row.names = unique(sig_intx$microbe)
+)
+colnames(heatmap_df_p) <- unique(sig_intx$metabolite)
+
+for(mic in unique(sig_intx$microbe)){
+    
+    this_microbe_dffilt <- results_dffilt_lme %>% 
+        filter(microbe == mic)
+    this_microbe_sig_intx <- sig_intx %>%
+        filter(microbe==mic)
+    for(met in unique(sig_intx$metabolite)){
+        
+        # if it isn't already in the sig_intx df
+        this_sig_intx <- this_microbe_sig_intx %>%
+            filter(metabolite==met)
+        if(nrow(this_sig_intx) == 0){
+            
+            # get the corresponding row from edgelist
+            vals <- this_microbe_dffilt %>% 
+                filter(metabolite == met) %>%
+                select(beta, fdr_p)
+            
+            
+        } else { # grab from sig_intx otherwise
+            vals <- this_sig_intx %>%
+                select(beta, fdr_p)
+        }
+        
+        # If there was a beta (regression ran successfully
+        if(nrow(vals)>0){
+            # extract beta and p
+            beta_val <- vals$beta
+            p_val <- vals$fdr_p
+            
+            heatmap_df[mic, met] <- beta_val    
+            heatmap_df_p[mic, met] <- p_val
+        }
+    }
+}
+
+
+heatmap_df$microbe <- row.names(heatmap_df)
+heatmap_df_p$microbe <- row.names(heatmap_df_p)
+
+heatmap_df_long <- heatmap_df %>% 
+    pivot_longer(cols=!microbe, 
+                 names_to="metabolite", 
+                 values_to="beta")
+heatmap_df_p_long <- heatmap_df_p %>% 
+    pivot_longer(cols=!microbe, 
+                 names_to="metabolite", 
+                 values_to="p")
+heatmap_df_long$p <- heatmap_df_p_long$p
+
+
+
+heatmap_df_long$plotmicrobe <- heatmap_df_long$microbe %>%
+    sapply(function(x) str_split(x, pattern=";[a-z]__")[[1]]) %>%
+    sapply(function(x) ifelse(x[length(x)] %in% c(""),
+                              no=x[length(x)], 
+                              yes=paste("family", x[length(x)-2])
+    )
+    ) %>%
+    sapply(function(x) gsub(";__", "", x, fixed=TRUE))
+
+heatmap_df_long <- heatmap_df_long %>% 
+    filter(microbe!="k__Bacteria;__;__;__;__;__")
+
+heatmap_df_long$annotated <- heatmap_df_long$metabolite %>% 
+    sapply(function(x) !grepl("^[C][\\d]{2,}", x, perl=T))
+
+
+heatmap_df_long$plotbeta <- heatmap_df_long$beta %>%
+    sapply(function(x) if(is.na(x)==F){
+        if(x>0){sqrt(x)} else{-sqrt(-x)}} 
+        else {NA})
+
+heatmap_df_long$plotmetabolite <- heatmap_df_long$metabolite %>%
+    sapply(function(x) substring(x, 1, nchar(x)-6)) %>%
+    sapply(function(x) gsub("z_", ",", x, fixed=TRUE))
+
+heatmap_df_long$plotmetabolite <- heatmap_df_long$plotmetabolite %>%
+    sapply(function(x) str_split(x, pattern="\\ C")[[1]][1])
+
+
+p <- ggplot(heatmap_df_long %>% 
+                filter(annotated==T,
+                       plotmicrobe %ni% c("g")) %>%
+                na.omit(),  
+            aes(y=plotmicrobe, 
+                x=plotmetabolite, 
+                colour=plotbeta, size=-log10(p),
+                alpha=(1-p)^(1/10),
+                shape=p<0.05) ) + 
+    geom_point() + 
+    scale_x_discrete() +
+    theme_minimal() +
+    theme(axis.text.x = element_text(size=8, 
+                                     angle = 45, 
+                                     hjust=1, 
+                                     vjust=1),
+          axis.text.y = element_text(size=8)) +
+    ylab("Microbe") +
+    xlab("Metabolite") +
+    scale_color_gradient2(midpoint=0,
+                          low="blue",
+                          mid="grey",
+                          high="red", 
+                          space ="Lab",
+                          limits=c(min(heatmap_df_long$plotbeta),
+                                   max(heatmap_df_long$plotbeta)),
+                          name=expression(sign(beta)*sqrt(abs(beta)))
+    ) +
+    guides(size="none", alpha="none") 
+p
+
+ggsave("../figures/microbe-metabo-heatmap_with_GF.pdf", plot=p,height = 10, width = 8)
+ggsave("../figures/microbe-metabo-heatmap_with_GF.png", plot=p,height = 10, width = 8)
+
+
+# Plot unannotated compounds too
+p <- ggplot(heatmap_df_long %>% 
+                filter(plotmicrobe %ni% c("g")) %>%
+                na.omit(),  
+            aes(y=plotmicrobe, 
+                x=plotmetabolite, 
+                colour=plotbeta, size=-log10(p),
+                alpha=(1-p)^(1/10),
+                shape=p<0.05) ) + 
+    geom_point() + 
+    scale_x_discrete() +
+    theme_minimal() +
+    theme(axis.text.x = element_text(size=8, 
+                                     angle = 45, 
+                                     hjust=1, 
+                                     vjust=1),
+          axis.text.y = element_text(size=8)) +
+    ylab("Microbe") +
+    xlab("Metabolite") +
+    scale_color_gradient2(midpoint=0,
+                          low="blue",
+                          mid="grey",
+                          high="red", 
+                          space ="Lab",
+                          limits=c(min(heatmap_df_long$plotbeta),
+                                   max(heatmap_df_long$plotbeta)),
+                          name=expression(sign(beta)*sqrt(abs(beta)))
+    ) +
+    guides(size="none", alpha="none") 
+p
+
+ggsave("../figures/microbe-metabo-heatmap-with-unannotated_with_GF.pdf", plot=p,height = 10, width = 8)
+ggsave("../figures/microbe-metabo-heatmap-with-unannotated_with_GF.png", plot=p,height = 10, width = 8)
+
+```
+
+## Random effect for humanized group + experiment
+
+Adding a random effect for humanized microbiome ID for a formula of metabolite \~ microbe + (1\|humanized_id) + (1\|experiment)
+
+1.  Scaled each metabolite to have a mean 0 and sd 1, so regression coefficients are comparable
+2.  Ran regressions on each microbe-metabolite combination (metabolite \~ microbe + (1\|humanized_id) + (1\|experiment))
+3.  Extracted the regression coefficient, p value, and maximum influence of any sample on the regression
+
+```{r run_lme2s, echo=F}
+lme2_df <- lme_df
+lme2_df$PID <- metadata$PID
+lme2_df$Group <- metadata$Group #experiment number
+
+# create function to parallelize
+run_lme2 <- function(i, j){
+    microbe <- feat_name_mapped[feat_name_mapped$old==genus_names[i], 
+                                "new"]
+    metabolite <- feat_name_mapped[feat_name_mapped$old==names(metabo_df)[j], 
+                                   "new"]
+    # scale the metabolite so beta is interpretable
+    curr_lm_df <- lme2_df[, c(microbe, metabolite, "PID", "Group")]
+    curr_lm_df[, metabolite] <- scale(curr_lm_df[, metabolite])
+    
+    # create formula
+    formula <- paste0(metabolite, " ~ ", microbe, " + (1|PID) + (1|Group)")
+    
+    # run model
+    mod <- lmerTest::lmer(formula, curr_lm_df)
+    
+    # extract p and beta
+    p <- coef(summary(mod))[microbe,"Pr(>|t|)"]
+    my_beta <- coef(summary(mod))[microbe,"Estimate"]
+    
+    # calculate maximum influence of any point
+    dffits_df <- as.data.frame(HLMdiag::mdffits(mod))
+    max_influence <- max(abs(dffits_df))
+    
+    # add new results to df
+    new_results <- list(microbe, metabolite, p, my_beta, max_influence)
+    return(new_results)
+}
+
+# Commented out to only run when desired, not when knitting, since it takes 20+ min to run locally
+
+# setup parallel backend to use many processors
+cores <- detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+doParallel::registerDoParallel(cl)
+
+registerDoSNOW(cl) # not sure what this is
+iterations_i <- ncol(genus)
+iterations_j <- ncol(metabo_df)
+pb <- txtProgressBar(max = iterations_i*iterations_j, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+
+results_lme2 <- data.frame(matrix(nrow=ncol(genus)*ncol(metabo_df),
+                                  ncol=5))
+names(results_lme2) <- c("microbe", "metabolite", "p", "beta", "max_influence")
+
+ptm <- proc.time()
+y_lme2 <- foreach(i=1:iterations_i,
+                  .combine=cbind,
+                  .options.snow = opts) %:%
+    foreach(j=1:iterations_j,
+            .combine=cbind,
+            .options.snow = opts) %dopar% {
+                progress(i)
+                run_lme2(i,j)
+            }
+
+print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+
+#stop cluster
+stopCluster(cl)
+#
+results_lme2$microbe <- unlist(y_lme2[1,])
+results_lme2$metabolite <- unlist(y_lme2[2,])
+results_lme2$p <- unlist(y_lme2[3,])
+results_lme2$beta <- unlist(y_lme2[4,])
+results_lme2$max_influence <- unlist(y_lme2[5,])
+
+write.csv(results_lme2, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme2_results_with_GF.csv")
+
+results_lme2 <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme2_results_with_GF.csv")
+
+```
+
+### Process LME results
+
+```{r process_and_summarize_lme2_results, echo=F}
+
+hist(results_lme2$beta, breaks=100)
+
+hist(results_lme2$max_influence, breaks=20)
+
+quantile(results_lme2$max_influence, c(0.5, 0.9, 0.95, 0.99), na.rm=T)
+
+summary(results_lme2)
+
+```
+
+### Assess significant regressions
+
+p values were false discovery rate (fdr) corrected via a benjamini-hochberg correction. A volcano plot shows beta (the regression coefficient) along the x axis and -log10(uncorrected p value) on the y axis.
+
+```{r lme2_results, echo=F, warning=F}
+results_dffilt_lme2 <- results_lme2 %>% 
+    filter(max_influence < 4)
+
+results_dffilt_lme2$fdr_p <- results_dffilt_lme2$p %>% 
+    p.adjust("BH")
+
+
+results_dffilt_lme2$sig <- ifelse(test = results_dffilt_lme2$p > 0.05, # check baseline sig
+                                  yes = "p > 0.05",
+                                  # if p < 0.05, see if this remains after fdr correction
+                                  no = ifelse(test = results_dffilt_lme2$fdr_p > 0.05,
+                                              yes = "p < 0.05",
+                                              no = "fdr p < 0.05"))
+
+table(results_dffilt_lme2$sig) %>% knitr::kable(caption = "Significance levels for regressions")
+
+
+volcano_df <- results_dffilt_lme2
+volcano_df$label <- NA
+
+volcano_df$annotated <- volcano_df$metabolite %>% 
+    sapply(function(x) !grepl("^[c][\\d]{2,}", 
+                              x, perl=T))
+volcano_df$metabolite[volcano_df$annotated==F] <- "unannotated"
+
+# create labels for the volcano plot
+volcano_df$intx<- paste(sapply(volcano_df$microbe, 
+                               function(x) str_split(x, "f_")[[1]][2]), 
+                        ":", 
+                        volcano_df$metabolite)
+
+volcano_df$label[
+    volcano_df$sig == "fdr p < 0.05"
+] <- volcano_df$intx[volcano_df$sig == "fdr p < 0.05"]
+
+# If label microbe was NA, make the whole label NA
+volcano_df$label[
+    volcano_df$label %>% 
+        sapply(function(x) grepl("^[NA]", 
+                                 x, perl=T))] <- NA
+
+p <- ggplot(data=volcano_df, aes(x=beta, y=-log10(p), col=sig, label=label)) + 
+    geom_point() + 
+    geom_text_repel(size = 2,
+                    max.overlaps = 40) +
+    scale_color_manual(values=c("red", "blue", "black")) +
+    theme(legend.title=element_blank())
+p
+
+```
+
+```{r sig_lme2_tables, echo=F}
+sig_intx <- results_dffilt_lme2 %>% 
+    filter(sig == "fdr p < 0.05") 
+
+sig_intx[order(sig_intx$p),
+         c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
+    filter(beta > 0) %>%
+    knitr::kable(caption = "Positively associated microbes and metabolites")
+
+
+sig_intx[order(sig_intx$p),
+         c("microbe", "metabolite", "p", "fdr_p", "beta")] %>% 
+    filter(beta < 0) %>%
+    knitr::kable(caption = "Negatively associated microbes and metabolites")
+
+
+table(sig_intx$metabolite)[table(sig_intx$metabolite) %>% 
+                               order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(caption = "Metabolites with most frequent significant relationships with microbes",
+                 col.names = c("Metabolite", "Frequency"))
+
+sig_intx$annotated <- sig_intx$metabolite %>% 
+    sapply(function(x) !grepl("^[c][\\d]{3,}", 
+                              x, perl=T))
+
+named_sig_intx <- sig_intx %>% filter(annotated == TRUE)
+
+table(named_sig_intx$metabolite)[table(named_sig_intx$metabolite) %>%
+                                     order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(col.names = c("Metabolite", "Frequency"),
+                 caption = "Annotated metabolites with most frequent significant relationships with microbes")
+
+
+# microbes
+table(sig_intx$microbe)[table(sig_intx$microbe) %>% 
+                            order(decreasing=T)] %>% 
+    head(10) %>% 
+    knitr::kable(caption = "Microbes with most frequent significant relationships with microbes",
+                 col.names = c("Microbe", "Frequency"))
+```
