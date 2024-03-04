@@ -7,7 +7,6 @@ output:
   pdf_document: default
 ---
 
-TODO: MAP JANITOR AND PROCESSED NAMES BACK TO PREV VERSION
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -211,9 +210,13 @@ cores <- detectCores()
 cl <- makeCluster(cores[1]-2) #not to overload your computer
 doParallel::registerDoParallel(cl)
 
-registerDoSNOW(cl) # not sure what this is
+registerDoSNOW(cl) 
 iterations_i <- ncol(genus)
 iterations_j <- ncol(metabo_df)
+
+print(paste("Running", iterations_i*iterations_j, "iterations"))
+
+
 pb <- txtProgressBar(max = iterations_i*iterations_j, style = 3)
 progress <- function(n) setTxtProgressBar(pb, n)
 opts <- list(progress = progress)
@@ -925,11 +928,12 @@ heatmap_df_long$plotmetabolite <- heatmap_df_long$plotmetabolite %>%
 
 p <- ggplot(heatmap_df_long %>% 
                 filter(annotated==T,
-                       plotmicrobe %ni% c("g")),  
+                       plotmicrobe %ni% c("g")) %>%
+                na.omit(),  
             aes(y=plotmicrobe, 
                 x=plotmetabolite, 
                 colour=plotbeta, size=-log10(p),
-                alpha=(-log10(p))/max(-log10(p)),
+                alpha=1-p,
                 shape=p<0.05) ) + 
     geom_point() + 
     scale_x_discrete() +
@@ -948,8 +952,9 @@ p <- ggplot(heatmap_df_long %>%
                          space ="Lab",
                          limits=c(min(heatmap_df_long$plotbeta),
                                   max(heatmap_df_long$plotbeta)),
-                        name=expression(sqrt(beta))
-    )
+                        name=expression(sign(beta)*sqrt(abs(beta)))
+    ) +
+    guides(size="none", alpha="none") 
 
 
 p
