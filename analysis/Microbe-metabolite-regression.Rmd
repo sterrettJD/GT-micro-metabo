@@ -510,6 +510,7 @@ table(results_dffilt_lme$sig) %>% knitr::kable(caption = "Significance levels fo
 volcano_df <- results_dffilt_lme
 volcano_df$label <- NA
 
+# search for unannotated compounds
 volcano_df$annotated <- volcano_df$metabolite %>% 
     sapply(function(x) !grepl("^[C][\\d]{2,}", 
                               x, perl=T))
@@ -536,18 +537,24 @@ volcano_df$label[
     sapply(function(x) grepl("^[NA]", 
                               x, perl=T))] <- NA
 
+# Another form of NA microbe annotation
+volcano_df$label[
+    volcano_df$label %>% 
+    sapply(function(x) grepl(";g__ :", 
+                              x, perl=T))] <- NA
+
 p <- ggplot(data=volcano_df, aes(x=beta, y=-log10(p), col=sig, label=label)) + 
     geom_point() + 
     geom_text_repel(size = 2,
-                    max.overlaps = 50) +
+                    max.overlaps = 30) +
     scale_color_manual(values=c("red", "blue", "black")) +
     theme(legend.title=element_blank()) +
     theme_bw() +
     labs(col="", x=expression(beta))
 p
 
-ggsave("../figures/LME-microbe-metabolite-volcano.png")
-ggsave("../figures/LME-microbe-metabolite-volcano.pdf")
+ggsave("../figures/LME-microbe-metabolite-volcano.png", plot=p, height=8, width=8)
+ggsave("../figures/LME-microbe-metabolite-volcano.pdf", plot=p, height=8, width=8)
 
 ```
 
@@ -861,19 +868,19 @@ for(mic in unique(sig_intx$microbe)){
             # get the corresponding row from edgelist
             vals <- this_microbe_dffilt %>% 
                 filter(metabolite == met) %>%
-                select(beta, p)
+                select(beta, fdr_p)
             
             
         } else { # grab from sig_intx otherwise
             vals <- this_sig_intx %>%
-                select(beta, p)
+                select(beta, fdr_p)
         }
         
         # If there was a beta (regression ran successfully
         if(nrow(vals)>0){
             # extract beta and p
             beta_val <- vals$beta
-            p_val <- vals$p
+            p_val <- vals$fdr_p
             
             heatmap_df[mic, met] <- beta_val    
             heatmap_df_p[mic, met] <- p_val
@@ -933,7 +940,7 @@ p <- ggplot(heatmap_df_long %>%
             aes(y=plotmicrobe, 
                 x=plotmetabolite, 
                 colour=plotbeta, size=-log10(p),
-                alpha=1-p,
+                alpha=(1-p)^(1/10),
                 shape=p<0.05) ) + 
     geom_point() + 
     scale_x_discrete() +
@@ -955,12 +962,46 @@ p <- ggplot(heatmap_df_long %>%
                         name=expression(sign(beta)*sqrt(abs(beta)))
     ) +
     guides(size="none", alpha="none") 
-
-
 p
 
 ggsave("../figures/microbe-metabo-heatmap.pdf", plot=p,height = 10, width = 8)
 ggsave("../figures/microbe-metabo-heatmap.png", plot=p,height = 10, width = 8)
+
+
+# Plot unannotated compounds too
+p <- ggplot(heatmap_df_long %>% 
+                filter(plotmicrobe %ni% c("g")) %>%
+                na.omit(),  
+            aes(y=plotmicrobe, 
+                x=plotmetabolite, 
+                colour=plotbeta, size=-log10(p),
+                alpha=(1-p)^(1/10),
+                shape=p<0.05) ) + 
+    geom_point() + 
+    scale_x_discrete() +
+    theme_minimal() +
+    theme(axis.text.x = element_text(size=8, 
+                                     angle = 45, 
+                                     hjust=1, 
+                                     vjust=1),
+          axis.text.y = element_text(size=8)) +
+    ylab("Microbe") +
+    xlab("Metabolite") +
+    scale_color_gradient2(midpoint=0,
+                         low="blue",
+                         mid="grey",
+                         high="red", 
+                         space ="Lab",
+                         limits=c(min(heatmap_df_long$plotbeta),
+                                  max(heatmap_df_long$plotbeta)),
+                        name=expression(sign(beta)*sqrt(abs(beta)))
+    ) +
+    guides(size="none", alpha="none") 
+p
+
+ggsave("../figures/microbe-metabo-heatmap-with-unannotated.pdf", plot=p,height = 10, width = 8)
+ggsave("../figures/microbe-metabo-heatmap-with-unannotated.png", plot=p,height = 10, width = 8)
+
 ```
 
 ## Random effect for humanized group + experiment
