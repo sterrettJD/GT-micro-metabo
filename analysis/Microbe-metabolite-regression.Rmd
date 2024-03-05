@@ -558,6 +558,86 @@ ggsave("../figures/LME-microbe-metabolite-volcano.pdf", plot=p, height=8, width=
 
 ```
 
+```{r lme_stacked_bar, echo=F}
+dffilt_lme_bymicrobe <- results_dffilt_lme %>%
+    filter(microbe!="k__Bacteria;__;__;__;__;__") %>%
+    group_by(microbe) %>%
+    summarise(fdr_up=sum(sig=="FDR p < 0.05" & beta>0),
+              fdr_down=sum(sig=="FDR p < 0.05" & beta<0),
+              up=sum(sig=="p < 0.05" & beta>0),
+              down=sum(sig=="p < 0.05" & beta<0),
+              unchanged=sum(sig=="p > 0.05" | is.na(sig))) %>%
+    mutate(microbe=sapply(microbe, 
+                    function(x) str_split(x, "f__")[[1]][2])) %>%
+    filter(microbe %ni% c(";g__", "NA", NA))
+
+# order microbes by how many positive relationships they have
+microbe_order <- dffilt_lme_bymicrobe$microbe[
+                    order(dffilt_lme_bymicrobe$fdr_up + 
+                              dffilt_lme_bymicrobe$up)]
+
+dffilt_lme_bymicrobe_long <- dffilt_lme_bymicrobe %>% 
+    pivot_longer(cols=-microbe, 
+                 names_to="significance",
+                 values_to="n")
+
+dffilt_lme_bymicrobe_long$significance <- factor(dffilt_lme_bymicrobe_long$significance,
+                                                 levels=c("fdr_down", "down",
+                                                    "unchanged", 
+                                                    "up", "fdr_up"))
+
+    
+ggplot(dffilt_lme_bymicrobe_long,
+       mapping=aes(x=n, y=microbe, fill=significance)) +
+    geom_bar(position="stack", stat="identity") +
+    scale_fill_manual(values=c("fdr_down"="blue", "down"="lightblue", 
+                               "unchanged"="lightgrey", 
+                               "up"="red", "fdr_up"="darkred")) +
+    scale_y_discrete(limits=microbe_order) + 
+    theme_bw()
+
+
+
+
+dffilt_lme_bycompound <- results_dffilt_lme %>%
+    filter(microbe!="k__Bacteria;__;__;__;__;__") %>%
+    group_by(metabolite) %>%
+    summarise(fdr_up=sum(sig=="FDR p < 0.05" & beta>0),
+              fdr_down=sum(sig=="FDR p < 0.05" & beta<0),
+              up=sum(sig=="p < 0.05" & beta>0),
+              down=sum(sig=="p < 0.05" & beta<0),
+              unchanged=sum(sig=="p > 0.05" | is.na(sig))) # %>%
+    # mutate(metabolite=sapply(microbe, 
+    #                 function(x) str_split(x, "f__")[[1]][2])) %>%
+    # filter(microbe %ni% c(";g__", "NA", NA))
+
+# order microbes by how many positive relationships they have
+metabolite_order <- dffilt_lme_bycompound$metabolite[
+                    order(dffilt_lme_bycompound$fdr_up + 
+                              dffilt_lme_bycompound$up)]
+
+dffilt_lme_bycompound_long <- dffilt_lme_bycompound %>% 
+    pivot_longer(cols=-metabolite, 
+                 names_to="significance",
+                 values_to="n")
+
+dffilt_lme_bycompound_long$significance <- factor(dffilt_lme_bycompound_long$significance,
+                                                 levels=c("fdr_down", "down",
+                                                    "unchanged", 
+                                                    "up", "fdr_up"))
+
+    
+ggplot(dffilt_lme_bycompound_long,
+       mapping=aes(x=n, y=metabolite, fill=significance)) +
+    geom_bar(position="stack", stat="identity") +
+    scale_fill_manual(values=c("fdr_down"="blue", "down"="lightblue", 
+                               "unchanged"="lightgrey", 
+                               "up"="red", "fdr_up"="darkred")) +
+    scale_y_discrete(limits=metabolite_order) + 
+    theme_bw()
+
+```
+
 ```{r sig_lme_tables, echo=F}
 sig_intx <- results_dffilt_lme %>% 
     filter(sig == "FDR p < 0.05") 
