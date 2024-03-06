@@ -562,19 +562,19 @@ ggsave("../figures/LME-microbe-metabolite-volcano.pdf", plot=p, height=8, width=
 dffilt_lme_bymicrobe <- results_dffilt_lme %>%
     filter(microbe!="k__Bacteria;__;__;__;__;__") %>%
     group_by(microbe) %>%
-    summarise(fdr_up=sum(sig=="FDR p < 0.05" & beta>0),
-              fdr_down=sum(sig=="FDR p < 0.05" & beta<0),
-              up=sum(sig=="p < 0.05" & beta>0),
-              down=sum(sig=="p < 0.05" & beta<0),
-              unchanged=sum(sig=="p > 0.05" | is.na(sig))) %>%
+    summarise(`FDR positive`=sum(sig=="FDR p < 0.05" & beta>0),
+              `FDR negative`=sum(sig=="FDR p < 0.05" & beta<0),
+              positive=sum(sig=="p < 0.05" & beta>0),
+              negative=sum(sig=="p < 0.05" & beta<0),
+              `no relationship`=sum(sig=="p > 0.05" | is.na(sig))) %>%
     mutate(microbe=sapply(microbe, 
                     function(x) str_split(x, "f__")[[1]][2])) %>%
     filter(microbe %ni% c(";g__", "NA", NA))
 
 # order microbes by how many positive relationships they have
 microbe_order <- dffilt_lme_bymicrobe$microbe[
-                    order(dffilt_lme_bymicrobe$fdr_up + 
-                              dffilt_lme_bymicrobe$up)]
+                    order(dffilt_lme_bymicrobe$`FDR positive` + 
+                              dffilt_lme_bymicrobe$positive)]
 
 dffilt_lme_bymicrobe_long <- dffilt_lme_bymicrobe %>% 
     pivot_longer(cols=-microbe, 
@@ -582,19 +582,21 @@ dffilt_lme_bymicrobe_long <- dffilt_lme_bymicrobe %>%
                  values_to="n")
 
 dffilt_lme_bymicrobe_long$significance <- factor(dffilt_lme_bymicrobe_long$significance,
-                                                 levels=c("fdr_down", "down",
-                                                    "unchanged", 
-                                                    "up", "fdr_up"))
+                                                 levels=c("FDR negative", "negative", 
+                                                          "no relationship", 
+                                                          "positive", "FDR positive"))
 
     
 ggplot(dffilt_lme_bymicrobe_long,
        mapping=aes(x=n, y=microbe, fill=significance)) +
     geom_bar(position="stack", stat="identity") +
-    scale_fill_manual(values=c("fdr_down"="blue", "down"="lightblue", 
-                               "unchanged"="lightgrey", 
-                               "up"="red", "fdr_up"="darkred")) +
+    scale_fill_manual(values=c("FDR negative"="blue", "negative"="lightblue", 
+                               "no relationship"="lightgrey", 
+                               "positive"="red", "FDR positive"="darkred")) +
     scale_y_discrete(limits=microbe_order) + 
-    theme_bw()
+    theme_bw() +
+    labs(x="Number of relationships with compounds", y="") +
+    theme(legend.title=element_blank())
 ggsave("../figures/LME-microbe-metabolite-summed-bars.png", height=10, width=8)
 ggsave("../figures/LME-microbe-metabolite-summed-bars.pdf", height=10, width=8)
 
@@ -614,6 +616,10 @@ metabolite_order <- dffilt_lme_bycompound$metabolite[
                     order(dffilt_lme_bycompound$fdr_up + 
                               dffilt_lme_bycompound$up)]
 
+annotated_metabolite_order_ids <- metabolite_order %>% 
+    sapply(function(x) !grepl("^[C][\\d]{3,}", 
+                              x, perl=T))
+
 dffilt_lme_bycompound_long <- dffilt_lme_bycompound %>% 
     pivot_longer(cols=-metabolite, 
                  names_to="significance",
@@ -623,17 +629,22 @@ dffilt_lme_bycompound_long$significance <- factor(dffilt_lme_bycompound_long$sig
                                                  levels=c("fdr_down", "down",
                                                     "unchanged", 
                                                     "up", "fdr_up"))
-
+dffilt_lme_bycompound_long$annotated <- dffilt_lme_bycompound_long$metabolite %>% 
+    sapply(function(x) !grepl("^[C][\\d]{3,}", 
+                              x, perl=T))
     
-ggplot(dffilt_lme_bycompound_long,
+ggplot(dffilt_lme_bycompound_long %>% filter(annotated==TRUE),
        mapping=aes(x=n, y=metabolite, fill=significance)) +
     geom_bar(position="stack", stat="identity") +
     scale_fill_manual(values=c("fdr_down"="blue", "down"="lightblue", 
                                "unchanged"="lightgrey", 
                                "up"="red", "fdr_up"="darkred")) +
-    scale_y_discrete(limits=metabolite_order) + 
+    scale_y_discrete(limits=metabolite_order[annotated_metabolite_order_ids]) + 
+    #facet_wrap(~annotated, scales="free_y") +
     theme_bw()
 
+ggsave("../figures/LME-microbe-metabolite-compound-summed-bars.png", height=12, width=12)
+ggsave("../figures/LME-microbe-metabolite-compound-summed-bars.pdf", height=12, width=12)
 ```
 
 ```{r sig_lme_tables, echo=F}
