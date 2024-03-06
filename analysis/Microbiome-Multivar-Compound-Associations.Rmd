@@ -17,7 +17,8 @@ pacman::p_load(tidyverse,
                foreach,
                parallel,
                doSNOW,
-               vegan)
+               vegan,
+               usedist)
 
 '%ni%' <- Negate('%in%')
 
@@ -74,7 +75,7 @@ for (x in names(w_uni)){
 names(w_uni) <- new_sample_ids
 
 # sort dataframes
-w_uni <- w_uni %>% subset(order(as.numeric(names(w_uni))))
+w_uni <- w_uni %>% dist_subset(order(as.numeric(names(w_uni))))
 metadata <- metadata[order(as.numeric(rownames(metadata))),,drop=FALSE]
 aqueous <- aqueous[order(as.numeric(rownames(aqueous))),,drop=FALSE]
 lipids <- lipids[order(as.numeric(rownames(lipids))),,drop=FALSE]
@@ -82,4 +83,26 @@ lipids <- lipids[order(as.numeric(rownames(lipids))),,drop=FALSE]
 # may remove the germ-free mice because with them we mostly get signal from the 
 # GF vs control differences
 non_controls <- metadata$PID!="Control"
+controls <- !non_controls
+```
+
+```{r, aggregate pseudoreplicates}
+# Create a column with unique control IDs because they ??aren't?? pseudoreplicates 
+# like the humanized microbiomes are
+metadata[controls, "PID_unique_controls"] <- paste0(
+    unlist(metadata[controls, "PID"]), 
+    1:sum(controls))
+metadata[non_controls, "PID_unique_controls"] <- metadata[non_controls, "PID"]
+
+# Aggregate the pseudoreplicated microbiome distances based on centroid distances
+no_pr_w_uni <- dist_multi_centroids(w_uni, metadata$PID_unique_controls)
+
+# Aggregate GT compounds as the mean of each humanized microbiome ID
+no_pr_lipids <- lipids %>% 
+    group_by(metadata$PID_unique_controls) %>%
+    summarise_all(mean)
+
+no_pr_aqueous <- aqueous %>% 
+    group_by(metadata$PID_unique_controls) %>%
+    summarise_all(mean)
 ```
