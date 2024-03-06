@@ -1,0 +1,85 @@
+---
+title: "Which green tea compounds in plasma associate with multivariate composition of the microbiome?"
+author: "John Sterrett"
+date: '2024-03-06'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse,
+               qiime2R,
+               data.table,
+               foreach,
+               parallel,
+               doSNOW,
+               vegan)
+
+'%ni%' <- Negate('%in%')
+
+setwd("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis")
+
+```
+
+# Load data
+
+```{r load_data, echo=F}
+# read in genus level table
+w_uni <- read_qza("../microbiome/core-metrics/weighted_unifrac_distance_matrix.qza")$data
+w_uni
+
+# read in metadata
+metadata <- fread("../metadata/mapping.tsv", sep = "\t")
+rownames(metadata) <- metadata$`MetaboSampleID`
+
+# read in metabolites
+aqueous <- fread("../metabolome/raw_aqueous.tsv",
+                 sep="\t", header = T) %>% as.data.frame()
+aqueous <- aqueous %>% remove_rownames() %>% column_to_rownames(var="V1")
+
+aqueous <- aqueous[rownames(aqueous) %ni% c("Compound Name", "Retention Time",
+                                          "Measured Retention Time", "Product Mass",
+                                         "QualifierMass", "CASNumber",
+                                         "CompoundType", "ISTDCompoundName", 
+                                         "Mass Column"),]
+aqueous <- mutate_all(aqueous, function(x) as.numeric(as.character(x)))
+
+
+# read in lipids
+lipids <- fread("../metabolome/raw_lipid.tsv",
+                sep="\t",
+                header = T)
+
+rownames(lipids) <- lipids$V1
+lipids <- lipids %>% remove_rownames() %>% column_to_rownames(var="V1")
+
+lipids <- lipids[rownames(lipids) %ni% c("Compound Name", "Retention Time",
+                                          "Measured Retention Time", "Product Mass",
+                                         "QualifierMass", "CASNumber",
+                                         "CompoundType", "ISTDCompoundName", 
+                                         "Mass Column"),]
+lipids <- mutate_all(lipids, function(x) as.numeric(as.character(x)))
+
+# map genus sample ids to metabolomics sample ids
+new_sample_ids <- c()
+for (x in names(w_uni)){
+    sampleid <- metadata[metadata$`#SampleID`==x, "MetaboSampleID"][[1,1]]
+    new_sample_ids <- c(new_sample_ids, sampleid)
+}
+
+names(w_uni) <- new_sample_ids
+
+# sort dataframes
+w_uni <- w_uni %>% subset(order(as.numeric(names(w_uni))))
+metadata <- metadata[order(as.numeric(rownames(metadata))),,drop=FALSE]
+aqueous <- aqueous[order(as.numeric(rownames(aqueous))),,drop=FALSE]
+lipids <- lipids[order(as.numeric(rownames(lipids))),,drop=FALSE]
+ 
+# may remove the germ-free mice because with them we mostly get signal from the 
+# GF vs control differences
+non_controls <- metadata$PID!="Control"
+```
