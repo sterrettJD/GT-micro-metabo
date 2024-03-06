@@ -592,7 +592,10 @@ ggplot(dffilt_lme_bymicrobe_long,
     geom_bar(position="stack", stat="identity") +
     scale_fill_manual(values=c("FDR negative"="blue", "negative"="lightblue", 
                                "no relationship"="lightgrey", 
-                               "positive"="red", "FDR positive"="darkred")) +
+                               "positive"="red", "FDR positive"="darkred"),
+                      breaks=c("FDR positive", "positive",
+                                 "no relationship",
+                                 "negative", "FDR negative")) +
     scale_y_discrete(limits=microbe_order) + 
     theme_bw() +
     labs(x="Number of relationships with compounds", y="") +
