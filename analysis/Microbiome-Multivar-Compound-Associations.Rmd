@@ -94,15 +94,60 @@ metadata[controls, "PID_unique_controls"] <- paste0(
     1:sum(controls))
 metadata[non_controls, "PID_unique_controls"] <- metadata[non_controls, "PID"]
 
+# Aggregate control IDs by experiment cohort
+# There are 3 controls per cohort, 
+# and there's a bit of a cohort effect in the controls
+metadata[controls, "PID_grouped_controls"] <- paste0(
+    unlist(metadata[controls, "PID"]), 
+    unlist(metadata[controls, "Group"]))
+metadata[non_controls, "PID_grouped_controls"] <- metadata[non_controls, "PID"]
+
 # Aggregate the pseudoreplicated microbiome distances based on centroid distances
-no_pr_w_uni <- dist_multi_centroids(w_uni, metadata$PID_unique_controls)
+no_pr_w_uni <- dist_multi_centroids(w_uni, metadata$PID_grouped_controls)
 
 # Aggregate GT compounds as the mean of each humanized microbiome ID
 no_pr_lipids <- lipids %>% 
-    group_by(metadata$PID_unique_controls) %>%
+    group_by(metadata$PID_grouped_controls) %>%
     summarise_all(mean)
 
 no_pr_aqueous <- aqueous %>% 
-    group_by(metadata$PID_unique_controls) %>%
+    group_by(metadata$PID_grouped_controls) %>%
     summarise_all(mean)
+
+# combine lipids and aqueous
+gt_compounds <- merge(no_pr_aqueous, no_pr_lipids, 
+                      by="metadata$PID_grouped_controls")
+rownames(gt_compounds) <- gt_compounds$`metadata$PID_grouped_controls`
+gt_compounds$`metadata$PID_grouped_controls` <- NULL
+gt_compounds_cleannames <- janitor::clean_names(gt_compounds)
+```
+
+```{r run adonis}
+
+run_adonis_for_compound <- function(distance_matrix, data,
+                                    compound, 
+                                    covariates_formula=NULL,
+                                    permutations=9999){
+    if(is.null(covariates_formula)){
+        this_formula <- as.formula(paste0("distance_matrix",
+                                          "~ ", compound))
+    } else {
+        this_formula <- as.formula(paste0("distance_matrix",
+                                          "~ ", covariates_formula, 
+                                          "+", compound))
+    }
+    res <- adonis2(this_formula, data, permutations=permutations)
+    res
+}
+
+adonis_results <- c()
+for(compound in colnames(gt_compounds_cleannames)){
+    this_result <- run_adonis_for_compound(no_pr_w_uni, 
+                                           gt_compounds_cleannames, 
+                                           compound=compound,
+                                           permutations=9999)
+    adonis_results <- c(adonis_results,
+                        this_result)
+}
+
 ```
