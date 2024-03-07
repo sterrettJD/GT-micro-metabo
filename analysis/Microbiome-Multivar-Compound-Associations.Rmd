@@ -119,6 +119,16 @@ gt_compounds <- merge(no_pr_aqueous, no_pr_lipids,
                       by="metadata$PID_grouped_controls")
 rownames(gt_compounds) <- gt_compounds$`metadata$PID_grouped_controls`
 gt_compounds$`metadata$PID_grouped_controls` <- NULL
+
+# rename columns
+colnames(gt_compounds) <- gsub(pattern="_[0-9.]+$", replacement="", 
+                           colnames(gt_compounds), perl=T)
+colnames(gt_compounds) <- gsub(pattern=" - [0-9.]+$", replacement="", 
+                           colnames(gt_compounds), perl=T)
+colnames(gt_compounds) <- gsub(pattern="\\*\\*", replacement="", 
+                           colnames(gt_compounds))
+
+
 gt_compounds_cleannames <- janitor::clean_names(gt_compounds)
 ```
 
@@ -141,13 +151,22 @@ run_adonis_for_compound <- function(distance_matrix, data,
 }
 
 adonis_results <- c()
+
 for(compound in colnames(gt_compounds_cleannames)){
     this_result <- run_adonis_for_compound(no_pr_w_uni, 
                                            gt_compounds_cleannames, 
                                            compound=compound,
-                                           permutations=9999)
+                                           permutations=99999)
     adonis_results <- c(adonis_results,
-                        this_result)
+                        this_result[compound, "Pr(>F)"])
 }
 
+adonis_df <- data.frame(compound=colnames(gt_compounds),
+                        p=adonis_results,
+                        padj=p.adjust(adonis_results, method="fdr"))
+
+adonis_df[adonis_df$p < 0.01,] %>%
+    knitr::kable()
 ```
+
+
