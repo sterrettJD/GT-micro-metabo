@@ -12,13 +12,14 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 
 pacman::p_load(tidyverse,
-               qiime2R,
                data.table,
                foreach,
                parallel,
                doSNOW,
                vegan,
-               usedist)
+               usedist,
+               selbal,
+               phyloseq)
 
 '%ni%' <- Negate('%in%')
 
@@ -30,7 +31,7 @@ setwd("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis"
 
 ```{r load_data, echo=F}
 # read in genus level table
-w_uni <- read_qza("../microbiome/core-metrics/weighted_unifrac_distance_matrix.qza")$data
+w_uni <- qiime2R::read_qza("../microbiome/core-metrics/weighted_unifrac_distance_matrix.qza")$data
 w_uni
 
 # read in metadata
@@ -169,4 +170,85 @@ adonis_df[adonis_df$p < 0.01,] %>%
     knitr::kable()
 ```
 
+```{r}
+compound <- "Shikonofuran D"
 
+pseq <- qiime2R::qza_to_phyloseq("../microbiome/core-metrics/rarefied_table.qza", 
+                        taxonomy="../microbiome/taxonomy_GT.qza")
+
+pseq <- pseq %>% tax_glom(taxrank="Genus", NArm=FALSE)
+genus_table <- pseq %>% otu_table()
+
+if(identical(rownames(otu_table(pseq)), taxa_names(pseq))){
+    new_names <- paste0(
+        tax_table(pseq)[taxa_names(pseq), "Family"],
+        "_",
+        tax_table(pseq)[taxa_names(pseq), "Genus"]   
+    )
+    new_names[new_names=="NA_NA"] <- 
+        paste0(new_names[new_names=="NA_NA"],
+               1:sum(new_names=="NA_NA"))
+    rownames(genus_table) <- new_names
+}
+
+if(length(unique(colSums(genus_table)))>1){
+    stop("ColSums aren't identical. Watch out.")
+}
+
+genus_table <- genus_table %>%
+    t() %>%
+    as.data.frame() %>%
+    group_by(metadata$PID_grouped_controls) %>%
+    summarise_all(mean) %>%
+    dplyr::select(-c(`metadata$PID_grouped_controls`))
+
+
+get_balance_vals <- function(selbal_res){
+    mod <- selbal_res$glm
+    mod$model$V1
+}
+
+get_global_balance_r2 <- function(selbal_res){
+    mod <- selbal_res$glm
+    cor(mod$fitted, mod$y)^2
+}
+
+all_selbals <- data.frame(matrix(nrow=0, ncol=6))
+colnames(all_selbals) <- c("compound", "compound_abundance", 
+                           "balance_values",
+                           "balance_num", "balance_den",
+                           "r2")
+    
+    
+for (compound in adonis_df[adonis_df$p < 0.01, "compound"]){
+    print(compound)
+    
+    selbal_res <- selbal.cv(x=genus_table, y=gt_compounds[,compound],
+                        n.fold=5, n.iter=10)
+
+    global_balance <- selbal_res$global.balance
+    
+    balance_values <- get_balance_vals(selbal_res)
+    r2 <- get_global_balance_r2(selbal_res)
+    
+    res <- data.frame(
+               compound=rep(compound, length(balance_values)),
+               compound_abundance=gt_compounds[,compound],
+               
+               balance_values=balance_values,
+               
+               balance_num=global_balance[global_balance$Group=="NUM", "Taxa"],
+               balance_den=global_balance[global_balance$Group=="DEN", "Taxa"],
+               
+               r2=rep(r2, length(balance_values))
+               )
+    all_selbals <- rbind(all_selbals, res)
+}
+
+ggplot(mapping=aes(x=balance_values, y=gt_compounds[,compound])) +
+    geom_point(size=3) +
+    geom_smooth(method="lm") +
+    theme_bw()
+
+
+```
