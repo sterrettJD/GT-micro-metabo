@@ -245,10 +245,35 @@ for (compound in adonis_df[adonis_df$p < 0.01, "compound"]){
     all_selbals <- rbind(all_selbals, res)
 }
 
-ggplot(mapping=aes(x=balance_values, y=gt_compounds[,compound])) +
+
+all_selbals$facet_name <- paste0(all_selbals$compound, ", ", 
+                                 expression(R^2), " = ",
+                                 round(all_selbals$r2, 2))
+all_selbals$facet_name <- all_selbals$facet_name %>% 
+    reorder(1-all_selbals$r2, FUN=first)
+
+all_selbals$balance_den[duplicated(all_selbals$facet_name)] <- NA
+all_selbals$balance_num[duplicated(all_selbals$facet_name)] <- NA
+all_selbals$balance_den <- all_selbals$balance_den %>% 
+    gsub(pattern="\\[", replacement="") %>%
+    gsub(pattern="\\]", replacement="")
+all_selbals$balance_num <- all_selbals$balance_num %>% 
+    gsub(pattern="\\[", replacement="") %>%
+    gsub(pattern="\\]", replacement="")
+
+
+p <- ggplot(all_selbals, mapping=aes(x=balance_values, y=compound_abundance)) +
     geom_point(size=3) +
     geom_smooth(method="lm") +
-    theme_bw()
+    geom_text(mapping = aes(label = ifelse(is.na(balance_num), "", paste0("  Num: ", balance_num))),
+            x=-Inf, y=Inf, hjust=0, vjust=1.2, size=3, na.rm=T) +
+    geom_text(mapping = aes(label = ifelse(is.na(balance_den), "", paste0("  Den: ", balance_den))),
+            x=-Inf, y=Inf, hjust=0, vjust=2.3, size=3, na.rm=T) +
+    theme_bw() +
+    facet_wrap(~facet_name, scales="free", ncol=4) +
+    labs(x="Balance", y="Compound abundance")
 
-
+p
+ggsave("../figures/selbal_compounds.pdf", plot=p, height=6, width = 14)
+ggsave("../figures/selbal_compounds.png", plot=p, height=6, width = 14)
 ```
