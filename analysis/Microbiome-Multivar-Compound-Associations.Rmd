@@ -31,8 +31,8 @@ setwd("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis"
 
 ```{r load_data, echo=F}
 # read in genus level table
-w_uni <- qiime2R::read_qza("../microbiome/core-metrics/weighted_unifrac_distance_matrix.qza")$data
-w_uni
+w_uni <- qiime2R::read_qza("../microbiome/core-metrics/weighted_unifrac_distance_matrix.qza")$data 
+
 
 # read in metadata
 metadata <- fread("../metadata/mapping.tsv", sep = "\t")
@@ -68,15 +68,16 @@ lipids <- mutate_all(lipids, function(x) as.numeric(as.character(x)))
 
 # map genus sample ids to metabolomics sample ids
 new_sample_ids <- c()
-for (x in names(w_uni)){
+for (x in labels(w_uni)){
+    print(x)
     sampleid <- metadata[metadata$`#SampleID`==x, "MetaboSampleID"][[1,1]]
     new_sample_ids <- c(new_sample_ids, sampleid)
 }
 
-names(w_uni) <- new_sample_ids
+w_uni <- dist_setNames(w_uni, new_sample_ids)
 
 # sort dataframes
-w_uni <- w_uni %>% dist_subset(order(as.numeric(names(w_uni))))
+w_uni <- w_uni %>% dist_subset(order(as.numeric(labels(w_uni))))
 metadata <- metadata[order(as.numeric(rownames(metadata))),,drop=FALSE]
 aqueous <- aqueous[order(as.numeric(rownames(aqueous))),,drop=FALSE]
 lipids <- lipids[order(as.numeric(rownames(lipids))),,drop=FALSE]
@@ -104,7 +105,7 @@ metadata[controls, "PID_grouped_controls"] <- paste0(
 metadata[non_controls, "PID_grouped_controls"] <- metadata[non_controls, "PID"]
 
 # Aggregate the pseudoreplicated microbiome distances based on centroid distances
-no_pr_w_uni <- dist_multi_centroids(w_uni, metadata$PID_grouped_controls)
+no_pr_w_uni <- dist_multi_centroids(w_uni, as.factor(metadata$PID_grouped_controls))
 
 # Aggregate GT compounds as the mean of each humanized microbiome ID
 no_pr_lipids <- lipids %>% 
@@ -170,7 +171,7 @@ adonis_df[adonis_df$p < 0.01,] %>%
     knitr::kable()
 ```
 
-```{r}
+```{r fig.height=6, fig.width=14}
 compound <- "Shikonofuran D"
 
 pseq <- qiime2R::qza_to_phyloseq("../microbiome/core-metrics/rarefied_table.qza", 
