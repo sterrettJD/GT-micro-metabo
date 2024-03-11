@@ -69,7 +69,6 @@ lipids <- mutate_all(lipids, function(x) as.numeric(as.character(x)))
 # map genus sample ids to metabolomics sample ids
 new_sample_ids <- c()
 for (x in labels(w_uni)){
-    print(x)
     sampleid <- metadata[metadata$`#SampleID`==x, "MetaboSampleID"][[1,1]]
     new_sample_ids <- c(new_sample_ids, sampleid)
 }
@@ -103,6 +102,11 @@ metadata[controls, "PID_grouped_controls"] <- paste0(
     unlist(metadata[controls, "PID"]), 
     unlist(metadata[controls, "Group"]))
 metadata[non_controls, "PID_grouped_controls"] <- metadata[non_controls, "PID"]
+
+
+no_pr_metadata <- metadata %>% 
+    group_by(PID_grouped_controls) %>%
+    summarize(PID=first(PID))
 
 # Aggregate the pseudoreplicated microbiome distances based on centroid distances
 no_pr_w_uni <- dist_multi_centroids(w_uni, as.factor(metadata$PID_grouped_controls))
@@ -152,7 +156,9 @@ run_adonis_for_compound <- function(distance_matrix, data,
     res
 }
 
+gf_index <- no_pr_metadata$PID=="Control"
 adonis_results <- c()
+lfc_results <- c()
 
 for(compound in colnames(gt_compounds_cleannames)){
     this_result <- run_adonis_for_compound(no_pr_w_uni, 
@@ -161,17 +167,32 @@ for(compound in colnames(gt_compounds_cleannames)){
                                            permutations=99999)
     adonis_results <- c(adonis_results,
                         this_result[compound, "Pr(>F)"])
+    gf_mean <- mean(gt_compounds_cleannames[gf_index, compound])
+    hu_mean <- mean(gt_compounds_cleannames[!gf_index, compound])
+    lfc <- log2(hu_mean/gf_mean)
+    lfc_results <- c(lfc_results, lfc)
 }
 
 adonis_df <- data.frame(compound=colnames(gt_compounds),
                         p=adonis_results,
-                        padj=p.adjust(adonis_results, method="fdr"))
+                        padj=p.adjust(adonis_results, method="fdr"),
+                        lfc_hu_vs_gf=lfc_results)
 
 adonis_df[adonis_df$p < 0.01,] %>%
     knitr::kable()
+
+p <- EnhancedVolcano::EnhancedVolcano(toptable=adonis_df, x="lfc_hu_vs_gf", y="p",
+                                 lab=adonis_df$compound, 
+                                 ylim=1e-4, pCutoff=1e-2,
+                                 xlim=c(-10, 10), xlab=expression(Log[2](HU/GF)),
+                                 title=NULL, subtitle=NULL,
+                                 drawConnectors = TRUE)
+p
+ggsave("../figures/adonis_lfc_no_pr_volcano.pdf", p, height=8, width=8)
+ggsave("../figures/adonis_lfc_no_pr_volcano.png", p, height=8, width=8)
 ```
 
-```{r fig.height=6, fig.width=14}
+```{r fig.height=6, fig.width=14, warning=FALSE}
 pseq <- qiime2R::qza_to_phyloseq("../microbiome/core-metrics/rarefied_table.qza", 
                         taxonomy="../microbiome/taxonomy_GT.qza")
 
