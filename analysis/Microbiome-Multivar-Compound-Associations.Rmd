@@ -172,8 +172,6 @@ adonis_df[adonis_df$p < 0.01,] %>%
 ```
 
 ```{r fig.height=6, fig.width=14}
-compound <- "Shikonofuran D"
-
 pseq <- qiime2R::qza_to_phyloseq("../microbiome/core-metrics/rarefied_table.qza", 
                         taxonomy="../microbiome/taxonomy_GT.qza")
 
@@ -277,4 +275,31 @@ p <- ggplot(all_selbals, mapping=aes(x=balance_values, y=compound_abundance)) +
 p
 ggsave("../figures/selbal_compounds.pdf", plot=p, height=6, width = 14)
 ggsave("../figures/selbal_compounds.png", plot=p, height=6, width = 14)
+```
+
+# Procrustes randomization test
+```{r protest_setup}
+w_uni_pcoa <- ape::pcoa(no_pr_w_uni)
+w_uni_pcoa_coords <- w_uni_pcoa$vectors
+
+aqueous_bc <- no_pr_aqueous %>% 
+    dplyr::select(-c(`metadata$PID_grouped_controls`)) %>%
+    ecodist::bcdist()
+aqueous_bc_pcoa <- ape::pcoa(aqueous_bc)
+aqueous_bc_pcoa_coords <- aqueous_bc_pcoa$vectors
+
+lipids_bc <- no_pr_lipids %>% 
+    dplyr::select(-c(`metadata$PID_grouped_controls`)) %>%
+    ecodist::bcdist()
+lipids_bc_pcoa <- ape::pcoa(lipids_bc)
+lipids_bc_pcoa_coords <- lipids_bc_pcoa$vectors
+```
+
+```{r run_protest}
+protest(w_uni_pcoa_coords[,1:10], aqueous_bc_pcoa_coords[,1:10], permutations=9999)
+protest(w_uni_pcoa_coords[,1:10], lipids_bc_pcoa_coords[,1:10], permutations=9999)
+
+
+mantel(no_pr_w_uni, aqueous_bc)
+mantel(no_pr_w_uni, lipids_bc)
 ```
