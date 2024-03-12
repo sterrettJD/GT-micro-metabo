@@ -215,6 +215,30 @@ regress_faith_clustered_errors <- function(data,
     res
 }
 
+# Removes each sample from the dataframe, reruns feols for dataframe with msising
+# estimate, and returns TRUE if no samples have a dffits > threshold
+# Will return FALSE if any sample has dffits > threshold
+check_dffits_clustered_feols <- function(estimate,
+                                         df_threshold,
+                                         data,
+                                         compound, 
+                                         covariates_formula=NULL,
+                                         cluster_col=NULL){
+    for (i in seq_len(nrow(data))) {
+        missing_row_df <- data[-i, , drop=FALSE]
+        missing_row_cluster_col <- cluster_col[-i]
+        minus_one_result <- regress_faith_clustered_errors(missing_row_df,
+                                           compound=compound,
+                                           cluster_col=missing_row_cluster_col)
+        minus_one_estimate <- minus_one_result$coeftable[compound, "Estimate"]
+        if(abs(estimate - minus_one_estimate) > df_threshold){
+            return(FALSE)
+        }
+    }
+    
+    return(TRUE)
+}
+
 
 # merge all the data from all samples
 all_gt <- merge(lipids, aqueous, by="row.names")
@@ -246,8 +270,19 @@ for(compound in colnames(dplyr::select(all_faith_gt_cleannames, -c(faith_pd)))){
                                            compound=compound,
                                            cluster_col=metadata$PID_grouped_controls)
     
-    p <- c(p, this_result$coeftable[compound, "Pr(>|t|)"])
-    effect <- c(effect, this_result$coeftable[compound, "Estimate"])
+    dffits_passes <- check_dffits_clustered_feols(
+                              estimate=this_result$coeftable[compound, "Estimate"],
+                              df_threshold=2, 
+                              data=all_faith_gt_cleannames,
+                              compound=compound,
+                              cluster_col=metadata$PID_grouped_controls)
+    if(dffits_passes){
+        p <- c(p, this_result$coeftable[compound, "Pr(>|t|)"])
+        effect <- c(effect, this_result$coeftable[compound, "Estimate"])
+    } else {
+        p <- c(p, NA)
+        effect <- c(effect, NA)
+    }
 }
 
 feols_df <- data.frame(compound=colnames(all_faith_gt)[2:ncol(all_faith_gt)],
@@ -255,7 +290,8 @@ feols_df <- data.frame(compound=colnames(all_faith_gt)[2:ncol(all_faith_gt)],
                         padj=p.adjust(p, method="fdr"),
                         effect=effect)
 
-feols_df[feols_df$padj < 0.05,] %>%
+feols_df %>%
+    filter(padj < 0.05) %>%
     knitr::kable()
 
 p <- EnhancedVolcano::EnhancedVolcano(toptable=feols_df, x="effect", y="p",
@@ -268,6 +304,21 @@ p
 
 ggsave("../figures/feols_faith_compounds_volcano.pdf", p, height=8, width=8)
 ggsave("../figures/feols_faith_compounds_volcano.png", p, height=8, width=8)
+
+
+
+faith_pd_plotdata <- all_faith_gt %>% 
+    dplyr::select(c(feols_df[feols_df$padj < 0.05, "compound"],
+                    faith_pd)) %>%
+    pivot_longer(cols=-c(faith_pd))
+p <- ggplot(faith_pd_plotdata, 
+            mapping=aes(x=faith_pd, y=value[,1])) +
+    geom_point(size=3) +
+    geom_smooth(method="lm") +
+    theme_bw() +
+    facet_wrap(~name, scales="free", ncol=4) +
+    labs(x="Faith's phylogenetic diversity", y="Compound abundance")
+p
 ```
 
 
