@@ -343,9 +343,14 @@ faith_pd_plotdata$effect <- feols_df[match(faith_pd_plotdata$name,
 faith_pd_plotdata <- faith_pd_plotdata %>%
     mutate(name=gsub(pattern="\\.[0-9]$", replacement="", 
                     name, perl=T))
+
+# gonna put a space here manually-ish
+# for long lipid names, put a space after the second `/` so facet labels can wrap
+faith_pd_plotdata$name <- faith_pd_plotdata$name %>% 
+    gsub(pattern="(.*?/.*)/", replacement="\\1/ ")
+
 faith_pd_plotdata$name <- faith_pd_plotdata$name %>% 
     reorder(faith_pd_plotdata$effect, FUN=first)
-
 
 p <- ggplot(faith_pd_plotdata, 
             mapping=aes(x=faith_pd, y=value[,1],
@@ -354,7 +359,9 @@ p <- ggplot(faith_pd_plotdata,
     geom_point(size=3) +
     geom_smooth(method="lm") +
     theme_bw() +
-    facet_wrap(~name, scales="free", ncol=4) +
+    facet_wrap(~name, scales="free", ncol=4,
+               labeller=labeller(name=label_wrap_gen(width=10, 
+                                                     multi_line=TRUE))) +
     labs(x="Faith's phylogenetic diversity", y="Compound abundance (scaled)")
 p
 
