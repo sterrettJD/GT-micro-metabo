@@ -323,6 +323,8 @@ names(compounds_to_plot_faith) <- NULL
 
 all_faith_gt_uniquenames <- all_faith_gt
 colnames(all_faith_gt_uniquenames) <- make.unique(colnames(all_faith_gt_uniquenames))
+
+
 faith_pd_plotdata <- all_faith_gt_uniquenames %>%
     dplyr::select(compounds_to_plot_faith,
                     faith_pd)
@@ -332,12 +334,18 @@ rownames(faith_pd_plotdata) <- faith_pd_plotdata$Row.names
 faith_pd_plotdata$Row.names <- NULL
 faith_pd_plotdata <- dplyr::rename(faith_pd_plotdata, "Humanized"="y")
 
-
 faith_pd_plotdata <- faith_pd_plotdata %>%
     pivot_longer(cols=-c(faith_pd,
-                         Humanized)) %>%
+                         Humanized)) 
+faith_pd_plotdata$effect <- feols_df[match(faith_pd_plotdata$name, 
+                                         feols_df$compound),
+                                   "effect"]
+faith_pd_plotdata <- faith_pd_plotdata %>%
     mutate(name=gsub(pattern="\\.[0-9]$", replacement="", 
                     name, perl=T))
+faith_pd_plotdata$name <- faith_pd_plotdata$name %>% 
+    reorder(faith_pd_plotdata$effect, FUN=first)
+
 
 p <- ggplot(faith_pd_plotdata, 
             mapping=aes(x=faith_pd, y=value[,1],
