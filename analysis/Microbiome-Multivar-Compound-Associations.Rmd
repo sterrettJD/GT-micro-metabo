@@ -197,7 +197,7 @@ ggsave("../figures/adonis_lfc_no_pr_volcano.png", p, height=8, width=8)
 faith <- qiime2R::read_qza("../microbiome/core-metrics/faith_pd_vector.qza")$data
 
 row.names(faith) <- match(row.names(faith), metadata$`#SampleID`)
-faith <- data.frame(faith_pd=faith[order(row.names(faith)),])
+faith <- data.frame(faith_pd=faith[order(as.numeric(row.names(faith))),])
 
 regress_faith_clustered_errors <- function(data,
                                     compound, 
@@ -218,6 +218,8 @@ regress_faith_clustered_errors <- function(data,
 # Removes each sample from the dataframe, reruns feols for dataframe with msising
 # estimate, and returns TRUE if no samples have a dffits > threshold
 # Will return FALSE if any sample has dffits > threshold
+# There has to be a way to do this based on hat values, but I can't
+# find it for clustered standard errors...
 check_dffits_clustered_feols <- function(estimate,
                                          df_threshold,
                                          data,
@@ -261,7 +263,6 @@ colnames(all_faith_gt) <- gsub(pattern="\\*\\*", replacement="",
 
 all_faith_gt_cleannames <- janitor::clean_names(all_faith_gt)
 
-
 p <- c()
 effect <- c()
 
@@ -272,7 +273,7 @@ for(compound in colnames(dplyr::select(all_faith_gt_cleannames, -c(faith_pd)))){
     
     dffits_passes <- check_dffits_clustered_feols(
                               estimate=this_result$coeftable[compound, "Estimate"],
-                              df_threshold=2, 
+                              df_threshold=1, 
                               data=all_faith_gt_cleannames,
                               compound=compound,
                               cluster_col=metadata$PID_grouped_controls)
@@ -285,7 +286,8 @@ for(compound in colnames(dplyr::select(all_faith_gt_cleannames, -c(faith_pd)))){
     }
 }
 
-feols_df <- data.frame(compound=colnames(all_faith_gt)[2:ncol(all_faith_gt)],
+# Need to use make.unique because there are a few duplicated compound names
+feols_df <- data.frame(compound=make.unique(colnames(all_faith_gt))[2:ncol(all_faith_gt)],
                         p=p,
                         padj=p.adjust(p, method="fdr"),
                         effect=effect)
@@ -294,8 +296,14 @@ feols_df %>%
     filter(padj < 0.05) %>%
     knitr::kable()
 
+feols_df %>%
+    filter(is.na(p)) %>%
+    knitr::kable(caption="Compounds with dffits > 2")
+
+
 p <- EnhancedVolcano::EnhancedVolcano(toptable=feols_df, x="effect", y="p",
-                                 lab=feols_df$compound, 
+                                 lab=gsub(pattern="\\.[0-9]$", replacement="", 
+                                          feols_df$compound, perl=T),
                                  ylim=1e-8, pCutoff=1e-2,
                                  xlim=c(-3, 3), xlab=expression(beta),
                                  title=NULL, subtitle=NULL,
@@ -306,19 +314,43 @@ ggsave("../figures/feols_faith_compounds_volcano.pdf", p, height=8, width=8)
 ggsave("../figures/feols_faith_compounds_volcano.png", p, height=8, width=8)
 
 
+compounds_to_plot_faith <- feols_df %>%
+    filter(padj < 0.05) %>%
+    dplyr::select(compound) %>%
+    unlist()
+names(compounds_to_plot_faith) <- NULL
 
-faith_pd_plotdata <- all_faith_gt %>% 
-    dplyr::select(c(feols_df[feols_df$padj < 0.05, "compound"],
-                    faith_pd)) %>%
-    pivot_longer(cols=-c(faith_pd))
+all_faith_gt_uniquenames <- all_faith_gt
+colnames(all_faith_gt_uniquenames) <- make.unique(colnames(all_faith_gt_uniquenames))
+faith_pd_plotdata <- all_faith_gt_uniquenames %>%
+    dplyr::select(compounds_to_plot_faith,
+                    faith_pd)
+faith_pd_plotdata <-merge(faith_pd_plotdata, 
+                          metadata$PID!="Control", by="row.names")
+rownames(faith_pd_plotdata) <- faith_pd_plotdata$Row.names
+faith_pd_plotdata$Row.names <- NULL
+faith_pd_plotdata <- dplyr::rename(faith_pd_plotdata, "Humanized"="y")
+
+
+faith_pd_plotdata <- faith_pd_plotdata %>%
+    pivot_longer(cols=-c(faith_pd,
+                         Humanized)) %>%
+    mutate(name=gsub(pattern="\\.[0-9]$", replacement="", 
+                    name, perl=T))
+
 p <- ggplot(faith_pd_plotdata, 
-            mapping=aes(x=faith_pd, y=value[,1])) +
+            mapping=aes(x=faith_pd, y=value[,1],
+                        #shape=Humanized
+                        )) +
     geom_point(size=3) +
     geom_smooth(method="lm") +
     theme_bw() +
     facet_wrap(~name, scales="free", ncol=4) +
-    labs(x="Faith's phylogenetic diversity", y="Compound abundance")
+    labs(x="Faith's phylogenetic diversity", y="Compound abundance (scaled)")
 p
+
+ggsave("../figures/feols_faith_compounds_scatter.pdf", p, height=8, width=8)
+ggsave("../figures/feols_faith_compounds_scatter.png", p, height=8, width=8)
 ```
 
 
