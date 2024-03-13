@@ -173,7 +173,7 @@ for(compound in colnames(gt_compounds_cleannames)){
     lfc_results <- c(lfc_results, lfc)
 }
 
-adonis_df <- data.frame(compound=colnames(gt_compounds),
+adonis_df <- data.frame(compound=make.unique(colnames(gt_compounds)),
                         p=adonis_results,
                         padj=p.adjust(adonis_results, method="fdr"),
                         lfc_hu_vs_gf=lfc_results)
@@ -182,7 +182,8 @@ adonis_df[adonis_df$p < 0.01,] %>%
     knitr::kable()
 
 p <- EnhancedVolcano::EnhancedVolcano(toptable=adonis_df, x="lfc_hu_vs_gf", y="p",
-                                 lab=adonis_df$compound, 
+                                 lab=gsub(pattern="\\.[0-9]$", replacement="", 
+                                          adonis_df$compound, perl=T), 
                                  ylim=1e-4, pCutoff=1e-2,
                                  xlim=c(-7, 7), xlab=expression(Log[2](HU/GF)),
                                  title=NULL, subtitle=NULL,
@@ -349,13 +350,13 @@ p <- ggplot(faith_pd_plotdata,
     labs(x="Faith's phylogenetic diversity", y="Compound abundance (scaled)")
 p
 
-ggsave("../figures/feols_faith_compounds_scatter.pdf", p, height=8, width=8)
-ggsave("../figures/feols_faith_compounds_scatter.png", p, height=8, width=8)
+ggsave("../figures/feols_faith_compounds_scatter.pdf", p, height=8, width=16)
+ggsave("../figures/feols_faith_compounds_scatter.png", p, height=8, width=16)
 ```
 
 
 
-
+# Selbal
 ```{r fig.height=6, fig.width=14, warning=FALSE}
 pseq <- qiime2R::qza_to_phyloseq("../microbiome/core-metrics/rarefied_table.qza", 
                         taxonomy="../microbiome/taxonomy_GT.qza")
@@ -403,11 +404,12 @@ colnames(all_selbals) <- c("compound", "compound_abundance",
                            "balance_num", "balance_den",
                            "r2")
     
-    
+gt_compounds_uniquenames <- gt_compounds
+colnames(gt_compounds_uniquenames) <- make.unique(colnames(gt_compounds_uniquenames))
 for (compound in adonis_df[adonis_df$p < 0.01, "compound"]){
     print(compound)
     
-    selbal_res <- selbal.cv(x=genus_table, y=gt_compounds[,compound],
+    selbal_res <- selbal.cv(x=genus_table, y=gt_compounds_uniquenames[,compound],
                         n.fold=5, n.iter=10)
 
     global_balance <- selbal_res$global.balance
@@ -417,7 +419,7 @@ for (compound in adonis_df[adonis_df$p < 0.01, "compound"]){
     
     res <- data.frame(
                compound=rep(compound, length(balance_values)),
-               compound_abundance=gt_compounds[,compound],
+               compound_abundance=gt_compounds_uniquenames[,compound],
                
                balance_values=balance_values,
                
@@ -430,8 +432,9 @@ for (compound in adonis_df[adonis_df$p < 0.01, "compound"]){
 }
 
 
-all_selbals$facet_name <- paste0(all_selbals$compound, ", ", 
-                                 expression(R^2), " = ",
+all_selbals$facet_name <- paste0(gsub(pattern="\\.[0-9]$", replacement="", 
+                                      all_selbals$compound, perl=T), 
+                                 ", ", expression(R^2), " = ",
                                  round(all_selbals$r2, 2))
 all_selbals$facet_name <- all_selbals$facet_name %>% 
     reorder(1-all_selbals$r2, FUN=first)
