@@ -181,6 +181,11 @@ adonis_df <- data.frame(compound=make.unique(colnames(gt_compounds)),
 adonis_df[adonis_df$p < 0.01,] %>%
     knitr::kable()
 
+adonis_df %>% 
+    filter(p < 0.1) %>%
+    arrange(padj) %>%
+    write.csv("adonis_lfc_results_p_0.1.csv")
+
 p <- EnhancedVolcano::EnhancedVolcano(toptable=adonis_df, x="lfc_hu_vs_gf", y="p",
                                  lab=gsub(pattern="\\.[0-9]$", replacement="", 
                                           adonis_df$compound, perl=T), 
@@ -314,6 +319,11 @@ p
 ggsave("../figures/feols_faith_compounds_volcano.pdf", p, height=8, width=8)
 ggsave("../figures/feols_faith_compounds_volcano.png", p, height=8, width=8)
 
+
+feols_df %>% 
+    filter(p < 0.1) %>%
+    arrange(padj) %>%
+    write.csv("feols_faith_results_p_0.1.csv")
 
 compounds_to_plot_faith <- feols_df %>%
     filter(padj < 0.05) %>%
