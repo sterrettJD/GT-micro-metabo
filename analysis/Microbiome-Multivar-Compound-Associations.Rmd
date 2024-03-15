@@ -663,6 +663,8 @@ if(sum(rownames(faith)==rownames(metadata)) != nrow(metadata)){
 feols_group_df <- merge(faith, metadata, by="row.names")
 feols_group_df$humanized <- feols_group_df$PID != "Control"
 
-fixest::feols(faith ~ humanized, data=feols_group_df, cluster=feols_group_df$PID)
+fixest::feols(faith_pd ~ humanized, data=feols_group_df, cluster=feols_group_df$PID)
+
+lmerTest::lmer(faith_pd ~ humanized + (1|PID), data=feols_group_df)
 ```
 
