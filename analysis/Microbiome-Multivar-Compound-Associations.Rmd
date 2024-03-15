@@ -502,6 +502,8 @@ feols_hu_df %>%
     knitr::kable(caption="Compounds with dffits > 1")
 
 
+adonis_df[adonis_df$p < 0.1, "compound"]
+
 feols_hu_df %>% 
     filter(p < 0.1) %>%
     arrange(p) %>%
@@ -649,3 +651,18 @@ protest(uni_pcoa_coords[,1:10], lipids_bc_pcoa_coords[,1:10], permutations=9999)
 mantel(no_pr_uni, aqueous_bc)
 mantel(no_pr_uni, lipids_bc)
 ```
+
+```{r adonis_by_group}
+adonis2(no_pr_uni ~ no_pr_metadata$PID=="Control")
+```
+
+```{r faith_by_group}
+if(sum(rownames(faith)==rownames(metadata)) != nrow(metadata)){
+    stop("faith and metadata rownames don't match up")
+}
+feols_group_df <- merge(faith, metadata, by="row.names")
+feols_group_df$humanized <- feols_group_df$PID != "Control"
+
+fixest::feols(faith ~ humanized, data=feols_group_df, cluster=feols_group_df$PID)
+```
+
