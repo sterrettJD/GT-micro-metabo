@@ -171,6 +171,7 @@ for(compound in colnames(gt_compounds_cleannames)){
     hu_mean <- mean(gt_compounds_cleannames[!gf_index, compound])
     lfc <- log2(hu_mean/gf_mean)
     lfc_results <- c(lfc_results, lfc)
+    
 }
 
 adonis_df <- data.frame(compound=make.unique(colnames(gt_compounds)),
@@ -229,7 +230,7 @@ regress_faith_clustered_errors <- function(data,
 # Will return FALSE if any sample has dffits > threshold
 # There has to be a way to do this based on hat values, but I can't
 # find it for clustered standard errors...
-check_dffits_clustered_feols <- function(estimate,
+check_dffits_clustered_faith_feols <- function(estimate,
                                          df_threshold,
                                          data,
                                          compound, 
@@ -259,6 +260,7 @@ all_faith_gt <- merge(faith, all_gt, by="row.names")
 rownames(all_faith_gt) <- all_faith_gt$Row.names
 all_faith_gt$Row.names <- NULL
 
+
 # Scale all compounds re
 all_faith_gt <- all_faith_gt %>% 
     mutate_at(scale, .vars=vars(-c(faith_pd)))
@@ -270,6 +272,9 @@ colnames(all_faith_gt) <- gsub(pattern=" - [0-9.]+$", replacement="",
 colnames(all_faith_gt) <- gsub(pattern="\\*\\*", replacement="", 
                            colnames(all_faith_gt))
 
+# order it like metadata
+all_faith_gt <- all_faith_gt[rownames(metadata),]
+
 all_faith_gt_cleannames <- janitor::clean_names(all_faith_gt)
 
 p <- c()
@@ -280,12 +285,12 @@ for(compound in colnames(dplyr::select(all_faith_gt_cleannames, -c(faith_pd)))){
                                            compound=compound,
                                            cluster_col=metadata$PID_grouped_controls)
     
-    dffits_passes <- check_dffits_clustered_feols(
+    dffits_passes <- check_dffits_clustered_faith_feols(
                               estimate=this_result$coeftable[compound, "Estimate"],
                               df_threshold=1, 
                               data=all_faith_gt_cleannames,
                               compound=compound,
-                              cluster_col=metadata$PID_grouped_controls)
+                              cluster_col=metadata$PID)
     if(dffits_passes){
         p <- c(p, this_result$coeftable[compound, "Pr(>|t|)"])
         effect <- c(effect, this_result$coeftable[compound, "Estimate"])
@@ -307,7 +312,7 @@ feols_df %>%
 
 feols_df %>%
     filter(is.na(p)) %>%
-    knitr::kable(caption="Compounds with dffits > 2")
+    knitr::kable(caption="Compounds with dffits > 1")
 
 
 p <- EnhancedVolcano::EnhancedVolcano(toptable=feols_df, x="effect", y="p",
@@ -383,6 +388,128 @@ p
 
 ggsave("../figures/feols_faith_compounds_scatter.pdf", p, height=8, width=16)
 ggsave("../figures/feols_faith_compounds_scatter.png", p, height=8, width=16)
+```
+
+
+
+```{r gf_vs_hu}
+regress_group_clustered_errors <- function(data,
+                                    compound, 
+                                    group,
+                                    covariates_formula=NULL,
+                                    cluster_col=NULL){
+    if(is.null(covariates_formula)){
+        this_formula <- as.formula(paste0(compound,
+                                          "~ ", group))
+    } else {
+        this_formula <- as.formula(paste0(compound,
+                                          "~ ", covariates_formula, 
+                                          "+", group))
+    }
+    res <- fixest::feols(this_formula, data, cluster=cluster_col)
+    res
+}
+
+# Removes each sample from the dataframe, reruns feols for dataframe with msising
+# estimate, and returns TRUE if no samples have a dffits > threshold
+# Will return FALSE if any sample has dffits > threshold
+# There has to be a way to do this based on hat values, but I can't
+# find it for clustered standard errors...
+check_dffits_clustered_group_feols <- function(estimate,
+                                         df_threshold,
+                                         data,
+                                         compound, 
+                                         group,
+                                         covariates_formula=NULL,
+                                         cluster_col=NULL){
+    for (i in seq_len(nrow(data))) {
+        missing_row_df <- data[-i, , drop=FALSE]
+        missing_row_cluster_col <- cluster_col[-i]
+        minus_one_result <- regress_group_clustered_errors(missing_row_df,
+                                           compound=compound,
+                                           group=group,
+                                           covariates_formula=covariates_formula,
+                                           cluster_col=missing_row_cluster_col)
+        
+        minus_one_estimate <- minus_one_result$coeftable[group, "Estimate"]
+        if(abs(estimate - minus_one_estimate) > df_threshold){
+            return(FALSE)
+        }
+    }
+    
+    return(TRUE)
+}
+
+# Sort it like metadata
+all_gt_hu <- all_gt[rownames(metadata),]
+
+# Scale data
+all_gt_hu <- all_gt_hu %>% 
+    mutate_all(scale)
+
+all_gt_hu$humanized <- metadata$PID=="Control"
+
+colnames(all_gt_hu) <- gsub(pattern="_[0-9.]+$", replacement="", 
+                           colnames(all_gt_hu), perl=T)
+colnames(all_gt_hu) <- gsub(pattern=" - [0-9.]+$", replacement="", 
+                           colnames(all_gt_hu), perl=T)
+colnames(all_gt_hu) <- gsub(pattern="\\*\\*", replacement="", 
+                           colnames(all_gt_hu))
+
+all_gt_cleannames <- janitor::clean_names(all_gt_hu)
+
+# Code this as numeric for easy access of coefficient
+all_gt_cleannames <- all_gt_cleannames %>%
+    mutate(humanized=as.numeric(humanized))
+
+p_hu <- c()
+effect_hu <- c()
+
+for(compound in colnames(dplyr::select(all_gt_cleannames, -c(humanized)))){
+    this_result <- regress_group_clustered_errors(all_gt_cleannames,
+                                           compound=compound,
+                                           group="humanized",
+                                           cluster_col=metadata$PID_grouped_controls)
+    
+    dffits_passes <- check_dffits_clustered_group_feols(
+                              estimate=this_result$coeftable["humanized", "Estimate"],
+                              df_threshold=1, 
+                              data=all_gt_cleannames,
+                              compound=compound,
+                              group="humanized",
+                              cluster_col=metadata$PID_grouped_controls)
+    if(dffits_passes){
+        p_hu <- c(p_hu, this_result$coeftable["humanized", "Pr(>|t|)"])
+        effect_hu <- c(effect_hu, this_result$coeftable["humanized", "Estimate"])
+    } else {
+        p_hu <- c(p_hu, NA)
+        effect_hu <- c(effect_hu, NA)
+    }
+}
+
+# Need to use make.unique because there are a few duplicated compound names
+feols_hu_df <- data.frame(compound=make.unique(colnames(all_gt_hu))[2:ncol(all_gt_hu)],
+                        p=p_hu,
+                        padj=p.adjust(p_hu, method="fdr"),
+                        effect=effect_hu)
+
+feols_hu_df %>%
+    filter(padj < 0.1) %>%
+    knitr::kable()
+
+feols_hu_df %>%
+    filter(is.na(p)) %>%
+    knitr::kable(caption="Compounds with dffits > 1")
+
+
+feols_hu_df %>% 
+    filter(p < 0.1) %>%
+    arrange(p) %>%
+    mutate(p=round(p, digits=3),
+           padj=round(padj, digits=3),
+           effect=round(effect, digits=2)) %>%
+    write.csv("feols_hu_results_p_0.1.csv")
+
 ```
 
 
