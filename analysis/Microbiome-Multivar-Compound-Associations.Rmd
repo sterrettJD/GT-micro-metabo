@@ -648,13 +648,29 @@ protest(uni_pcoa_coords[,1:10], aqueous_bc_pcoa_coords[,1:10], permutations=9999
 protest(uni_pcoa_coords[,1:10], lipids_bc_pcoa_coords[,1:10], permutations=9999)
 
 
-mantel(no_pr_uni, aqueous_bc)
-mantel(no_pr_uni, lipids_bc)
+mantel(no_pr_uni, aqueous_bc, permutations=9999)
+mantel(no_pr_uni, lipids_bc, permutations=9999)
 ```
 
 ```{r adonis_by_group}
 adonis2(no_pr_uni ~ no_pr_metadata$PID=="Control")
+
+adonis2(aqueous_bc ~ no_pr_metadata$PID=="Control")
+adonis2(lipids_bc ~ no_pr_metadata$PID=="Control")
 ```
+
+
+```{r adonis_by_cohort}
+no_pr_group_metadata <- metadata %>%
+    group_by(PID_grouped_controls) %>%
+    dplyr::summarise(Group=first(Group))
+
+adonis2(no_pr_uni ~ no_pr_group_metadata$Group)
+
+adonis2(aqueous_bc ~ no_pr_group_metadata$Group)
+adonis2(lipids_bc ~ no_pr_group_metadata$Group)
+```
+
 
 ```{r faith_by_group}
 if(sum(rownames(faith)==rownames(metadata)) != nrow(metadata)){
@@ -665,6 +681,6 @@ feols_group_df$humanized <- feols_group_df$PID != "Control"
 
 fixest::feols(faith_pd ~ humanized, data=feols_group_df, cluster=feols_group_df$PID)
 
-lmerTest::lmer(faith_pd ~ humanized + (1|PID), data=feols_group_df)
+lmerTest::lmer(faith_pd ~ humanized + (1|PID), data=feols_group_df) %>% summary()
 ```
 
