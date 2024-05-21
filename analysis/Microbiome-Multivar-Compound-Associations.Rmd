@@ -380,11 +380,6 @@ faith_pd_plotdata <- faith_pd_plotdata %>%
 
 faith_pd_plotdata$name <- str_replace_all(faith_pd_plotdata$name, z_pattern, "")
 
-# gonna put a space here manually-ish
-# for long lipid names, put a space after the second `/` so facet labels can wrap
-faith_pd_plotdata$name <- faith_pd_plotdata$name %>% 
-    gsub(pattern="(.*?/.*)/", replacement="\\1/ ")
-
 faith_pd_plotdata$name <- faith_pd_plotdata$name %>% 
     reorder(faith_pd_plotdata$effect, FUN=first)
 
@@ -608,6 +603,7 @@ for (compound in adonis_df[adonis_df$p < 0.01, "compound"]){
     all_selbals <- rbind(all_selbals, res)
 }
 
+all_selbals$compound <- str_replace_all(all_selbals$compound, z_pattern, "")
 
 all_selbals$facet_name <- paste0(gsub(pattern="\\.[0-9]$", replacement="", 
                                       all_selbals$compound, perl=T), 
