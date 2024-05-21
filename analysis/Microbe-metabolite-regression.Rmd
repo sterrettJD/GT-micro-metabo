@@ -562,7 +562,7 @@ ggsave("../figures/LME-microbe-metabolite-volcano.pdf", plot=p, height=8, width=
 dffilt_lme_bymicrobe <- results_dffilt_lme %>%
     filter(microbe!="k__Bacteria;__;__;__;__;__") %>%
     group_by(microbe) %>%
-    summarise(`FDR positive`=sum(sig=="FDR p < 0.05" & beta>0),
+    dplyr::summarise(`FDR positive`=sum(sig=="FDR p < 0.05" & beta>0),
               `FDR negative`=sum(sig=="FDR p < 0.05" & beta<0),
               positive=sum(sig=="p < 0.05" & beta>0),
               negative=sum(sig=="p < 0.05" & beta<0),
@@ -608,7 +608,7 @@ ggsave("../figures/LME-microbe-metabolite-summed-bars.pdf", height=10, width=8)
 dffilt_lme_bycompound <- results_dffilt_lme %>%
     filter(microbe!="k__Bacteria;__;__;__;__;__") %>%
     group_by(metabolite) %>%
-    summarise(fdr_up=sum(sig=="FDR p < 0.05" & beta>0),
+    dplyr::summarise(fdr_up=sum(sig=="FDR p < 0.05" & beta>0),
               fdr_down=sum(sig=="FDR p < 0.05" & beta<0),
               up=sum(sig=="p < 0.05" & beta>0),
               down=sum(sig=="p < 0.05" & beta<0),
@@ -842,13 +842,13 @@ results_lme_within <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-
 # filter high max influence
 results_lme_within <- results_lme_within %>% 
     filter(max_influence < 4) %>%
-    select(-V1) #drop the added column
+    dplyr::select(-V1) #drop the added column
 
 
 results_lme_between <- results_dffilt_lme %>% 
-    rename("feature_1" = "microbe",
+    dplyr::rename("feature_1" = "microbe",
             "feature_2" = "metabolite") %>%
-    select(-fdr_p,
+    dplyr::select(-fdr_p,
            -sig,
            -V1)
 
@@ -860,11 +860,11 @@ edgelist_df$feature_2 <- clean_name_mapper[edgelist_df$feature_2,]
 edgelist_df$fdr_p <- p.adjust(edgelist_df$p)
 edgelist_for_graph <- edgelist_df %>% 
     filter(fdr_p < 0.05) %>% 
-    select(feature_1, feature_2, beta)
+    dplyr::select(feature_1, feature_2, beta)
 
 # network with all fdr p interactions
 g_all <- edgelist_for_graph[complete.cases(edgelist_for_graph)] %>% 
-    select(-beta) %>% 
+    dplyr::select(-beta) %>% 
     as.matrix() %>%
     graph_from_edgelist(directed = F)
 
@@ -878,7 +878,7 @@ degrees_g_all %>%
 # network with only positive interactions
 g_pos <- edgelist_for_graph[complete.cases(edgelist_for_graph)] %>% 
     filter(beta > 0) %>%
-    select(-beta) %>% 
+    dplyr::select(-beta) %>% 
     as.matrix() %>%
     graph_from_edgelist(directed = F)
 
@@ -960,12 +960,12 @@ for(mic in unique(sig_intx$microbe)){
             # get the corresponding row from edgelist
             vals <- this_microbe_dffilt %>% 
                 filter(metabolite == met) %>%
-                select(beta, fdr_p)
+                dplyr::select(beta, fdr_p)
             
             
         } else { # grab from sig_intx otherwise
             vals <- this_sig_intx %>%
-                select(beta, fdr_p)
+                dplyr::select(beta, fdr_p)
         }
         
         # If there was a beta (regression ran successfully
@@ -1025,6 +1025,10 @@ heatmap_df_long$plotmetabolite <- heatmap_df_long$metabolite %>%
 
 heatmap_df_long$plotmetabolite <- heatmap_df_long$plotmetabolite %>%
     sapply(function(x) str_split(x, pattern="\\ C")[[1]][1])
+
+z_pattern <- "\\(\\d+Z(?:,\\d+Z)*\\)"
+heatmap_df_long$plotmetabolite <- str_replace_all(heatmap_df_long$plotmetabolite, 
+                                                  z_pattern, "")
 
 # transformer for color scale
 ssqrt <- scales::new_transform("signed sqrt", 
