@@ -47,7 +47,7 @@ taxonomy.table <- pseq %>% tax_table() %>% as.data.frame()
 
 # Microshades {.tabset}
 ```{r}
-make_microshades_phylum <- function(pseq, subgroup){
+make_microshades_phylum <- function(pseq, subgroup, sample_ids=FALSE){
     # prep the microshades colors
     mdf_prep <- prep_mdf(pseq, subgroup_level=subgroup)
     # sort the phylum names
@@ -70,11 +70,20 @@ make_microshades_phylum <- function(pseq, subgroup){
     
     # plot
     plot <- plot_microshades(mdf_GP, cdf_GP)
-    plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
-      theme(legend.position = "none")  +
-      #theme(axis.text.x = element_blank()) +
-      facet_grid(~PID, scales="free_x", space="free_x"
+    if (sample_ids==TRUE){
+        plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
+        theme(legend.position = "none")  +
+        facet_grid(~PID, scales="free_x", space="free_x"
+                 )    
+    } else {
+        plot_1 <- plot + scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
+        theme(legend.position = "none")  +
+        theme(axis.text.x = element_blank(),
+              axis.ticks.x = element_blank()) +
+        facet_grid(~PID, scales="free_x", space="free_x"
                  )
+    }
+    
     
     multi <- plot_grid(plot_1, GP_legend,  rel_widths = c(1, .25))
     multi
