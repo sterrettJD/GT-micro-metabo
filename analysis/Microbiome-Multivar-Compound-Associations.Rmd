@@ -159,6 +159,7 @@ run_adonis_for_compound <- function(distance_matrix, data,
 gf_index <- no_pr_metadata$PID=="Control"
 adonis_results <- c()
 lfc_results <- c()
+t_results <- c()
 
 for(compound in colnames(gt_compounds_cleannames)){
     this_result <- run_adonis_for_compound(no_pr_uni, 
@@ -172,12 +173,18 @@ for(compound in colnames(gt_compounds_cleannames)){
     lfc <- log2(hu_mean/gf_mean)
     lfc_results <- c(lfc_results, lfc)
     
+    t_p <- t.test(gt_compounds_cleannames[gf_index, compound],
+                  gt_compounds_cleannames[!gf_index, compound])$p.value
+    t_results <- c(t_results, t_p)
+    
 }
 
 adonis_df <- data.frame(compound=make.unique(colnames(gt_compounds)),
                         p=adonis_results,
                         padj=p.adjust(adonis_results, method="fdr"),
-                        lfc_hu_vs_gf=lfc_results)
+                        lfc_hu_vs_gf=lfc_results,
+                        t_test_p=t_results,
+                        t_test_padj=p.adjust(t_results, method="fdr"))
 
 adonis_df[adonis_df$p < 0.01,] %>%
     knitr::kable()
@@ -188,6 +195,7 @@ adonis_df %>%
     mutate(p=round(p, digits=3),
            padj=round(padj, digits=3),
            lfc_hu_vs_gf=round(lfc_hu_vs_gf, digits=2)) %>%
+    dplyr::select(-c(t_test_p, t_test_padj)) %>%
     write.csv("adonis_lfc_results_p_0.1.csv")
 
 p <- EnhancedVolcano::EnhancedVolcano(toptable=adonis_df, x="lfc_hu_vs_gf", y="p",
@@ -198,6 +206,7 @@ p <- EnhancedVolcano::EnhancedVolcano(toptable=adonis_df, x="lfc_hu_vs_gf", y="p
                                  title=NULL, subtitle=NULL,
                                  drawConnectors=TRUE, arrowheads=F)
 p
+
 ggsave("../figures/adonis_lfc_no_pr_volcano.pdf", p, height=8, width=8)
 ggsave("../figures/adonis_lfc_no_pr_volcano.png", p, height=8, width=8)
 ```
@@ -314,10 +323,14 @@ feols_df %>%
     filter(is.na(p)) %>%
     knitr::kable(caption="Compounds with dffits > 1")
 
+# remove the pattern of (6Z,9Z)
+z_pattern <- "\\(\\d+Z(?:,\\d+Z)*\\)"
+feols_df$compound_clean <- str_replace_all(feols_df$compound, z_pattern, "")
+
 
 p <- EnhancedVolcano::EnhancedVolcano(toptable=feols_df, x="effect", y="p",
                                  lab=gsub(pattern="\\.[0-9]$", replacement="", 
-                                          feols_df$compound, perl=T),
+                                          feols_df$compound_clean, perl=T),
                                  ylim=1e-8, pCutoff=1e-2,
                                  xlim=c(-3, 3), xlab=expression(beta),
                                  title=NULL, subtitle=NULL,
@@ -365,6 +378,8 @@ faith_pd_plotdata <- faith_pd_plotdata %>%
     mutate(name=gsub(pattern="\\.[0-9]$", replacement="", 
                     name, perl=T))
 
+faith_pd_plotdata$name <- str_replace_all(faith_pd_plotdata$name, z_pattern, "")
+
 # gonna put a space here manually-ish
 # for long lipid names, put a space after the second `/` so facet labels can wrap
 faith_pd_plotdata$name <- faith_pd_plotdata$name %>% 
@@ -372,6 +387,8 @@ faith_pd_plotdata$name <- faith_pd_plotdata$name %>%
 
 faith_pd_plotdata$name <- faith_pd_plotdata$name %>% 
     reorder(faith_pd_plotdata$effect, FUN=first)
+
+
 
 p <- ggplot(faith_pd_plotdata, 
             mapping=aes(x=faith_pd, y=value[,1],
@@ -381,7 +398,7 @@ p <- ggplot(faith_pd_plotdata,
     geom_smooth(method="lm") +
     theme_bw() +
     facet_wrap(~name, scales="free", ncol=4,
-               labeller=labeller(name=label_wrap_gen(width=10, 
+               labeller=labeller(name=label_wrap_gen(width=50, 
                                                      multi_line=TRUE))) +
     labs(x="Faith's phylogenetic diversity", y="Compound abundance (scaled)")
 p
@@ -502,7 +519,7 @@ feols_hu_df %>%
     knitr::kable(caption="Compounds with dffits > 1")
 
 
-adonis_df[adonis_df$p < 0.1, "compound"]
+feols_hu_df[feols_hu_df$p < 0.1, "compound"]
 
 feols_hu_df %>% 
     filter(p < 0.1) %>%
