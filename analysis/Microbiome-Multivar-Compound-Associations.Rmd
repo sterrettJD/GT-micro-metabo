@@ -347,10 +347,11 @@ sum_lipid_structure <- function(lipid_structure) {
 
 replace_lipid_structure <- function(input_string) {
   # Use a regex to find lipid structures within parentheses
-  pattern <- "\\((\\d+:\\d+(?:/\\d+:\\d+)*)\\)"
+  pattern <- "\\(P?-?(\\d+:\\d+(?:/\\d+:\\d+)*)\\)"
   
-  replace_function <- function(match) {
+  replace_function <- function(match, ...) {
     lipid_structure <- gsub(pattern="\\(|\\)", replacement="", x=match) # Remove the parentheses
+    lipid_structure <- gsub(pattern="\\(|\\)", replacement="", x=match) # Remove the P- from PG 
     summed_structure <- sum_lipid_structure(lipid_structure)
     return(paste0("(", summed_structure, ")"))
   }
@@ -364,7 +365,7 @@ replace_lipid_structure_vector <- function(input_vector) {
   return(result_vector)
 }
 
-replace_lipid_structure_vector(feols_df$compound_clean)
+feols_df$compound_clean <- replace_lipid_structure_vector(feols_df$compound_clean)
 
 p <- EnhancedVolcano::EnhancedVolcano(toptable=feols_df, x="effect", y="p",
                                  lab=gsub(pattern="\\.[0-9]$", replacement="", 
