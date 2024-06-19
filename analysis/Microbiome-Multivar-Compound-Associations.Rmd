@@ -224,7 +224,7 @@ replace_lipid_structure_vector <- function(input_vector) {
   return(result_vector)
 }
 
-adonis_df$compound <- replace_lipid_structure_vector(adonis_df$compound)
+adonis_df$compound_clean <- replace_lipid_structure_vector(adonis_df$compound)
 
 adonis_df[adonis_df$p < 0.01,] %>%
     knitr::kable()
@@ -235,12 +235,12 @@ adonis_df %>%
     mutate(p=round(p, digits=3),
            padj=round(padj, digits=3),
            lfc_hu_vs_gf=round(lfc_hu_vs_gf, digits=2)) %>%
-    dplyr::select(-c(t_test_p, t_test_padj)) %>%
+    dplyr::select(-c(t_test_p, t_test_padj, compound)) %>%
     write.csv("adonis_lfc_results_p_0.1.csv")
 
 p <- EnhancedVolcano::EnhancedVolcano(toptable=adonis_df, x="lfc_hu_vs_gf", y="p",
                                  lab=gsub(pattern="\\.[0-9]$", replacement="", 
-                                          adonis_df$compound, perl=T), 
+                                          adonis_df$compound_clean, perl=T), 
                                  ylim=1e-4, pCutoff=1e-2,
                                  xlim=c(-7, 7), xlab=expression(Log[2](HU/GF)),
                                  title=NULL, subtitle=NULL,
@@ -651,8 +651,10 @@ all_selbals$facet_name <- paste0(gsub(pattern="\\.[0-9]$", replacement="",
                                       all_selbals$compound, perl=T), 
                                  ", ", expression(R^2), " = ",
                                  round(all_selbals$r2, 2))
+all_selbals$facet_name <- replace_lipid_structure_vector(all_selbals$facet_name)
 all_selbals$facet_name <- all_selbals$facet_name %>% 
     reorder(1-all_selbals$r2, FUN=first)
+
 
 all_selbals$balance_den[duplicated(all_selbals$facet_name)] <- NA
 all_selbals$balance_num[duplicated(all_selbals$facet_name)] <- NA
