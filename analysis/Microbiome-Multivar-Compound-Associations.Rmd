@@ -186,6 +186,46 @@ adonis_df <- data.frame(compound=make.unique(colnames(gt_compounds)),
                         t_test_p=t_results,
                         t_test_padj=p.adjust(t_results, method="fdr"))
 
+# this function sums up the number of carbons and double bonds in each lipid
+sum_lipid_structure <- function(lipid_structure) {
+  chains <- strsplit(lipid_structure, "/")[[1]]
+  total_length <- 0
+  total_bonds <- 0
+ 
+    for (chain in chains) {
+        parts <- strsplit(chain, ":")[[1]]
+        length <- as.integer(parts[1])
+        bonds <- as.integer(parts[2])
+        total_length <- total_length + length
+        total_bonds <- total_bonds + bonds
+  }
+  
+  # Return the total length and bonds as a single string
+  return(paste(total_length, total_bonds, sep=":"))
+}
+
+replace_lipid_structure <- function(input_string) {
+  # Use a regex to find lipid structures within parentheses
+  pattern <- "\\(P?-?(\\d+:\\d+(?:/\\d+:\\d+)*)\\)"
+  
+  replace_function <- function(match, ...) {
+    lipid_structure <- gsub(pattern="\\(|\\)", replacement="", x=match) # Remove the parentheses
+    lipid_structure <- gsub(pattern="\\(|\\)", replacement="", x=match) # Remove the P- from PG 
+    summed_structure <- sum_lipid_structure(lipid_structure)
+    return(paste0("(", summed_structure, ")"))
+  }
+  result_string <- gsubfn::gsubfn(pattern=pattern, replace=replace_function, x=input_string)
+  return(result_string)
+}
+
+replace_lipid_structure_vector <- function(input_vector) {
+  # Apply the replace_lipid_structure function to each element of the vector
+  result_vector <- sapply(input_vector, replace_lipid_structure)
+  return(result_vector)
+}
+
+adonis_df$compound <- replace_lipid_structure_vector(adonis_df$compound)
+
 adonis_df[adonis_df$p < 0.01,] %>%
     knitr::kable()
 
@@ -327,44 +367,6 @@ feols_df %>%
 z_pattern <- "\\(\\d+Z(?:,\\d+Z)*\\)"
 feols_df$compound_clean <- str_replace_all(feols_df$compound, z_pattern, "")
 
-# this function sums up the number of carbons and double bonds in each lipid
-sum_lipid_structure <- function(lipid_structure) {
-  chains <- strsplit(lipid_structure, "/")[[1]]
-  total_length <- 0
-  total_bonds <- 0
- 
-    for (chain in chains) {
-        parts <- strsplit(chain, ":")[[1]]
-        length <- as.integer(parts[1])
-        bonds <- as.integer(parts[2])
-        total_length <- total_length + length
-        total_bonds <- total_bonds + bonds
-  }
-  
-  # Return the total length and bonds as a single string
-  return(paste(total_length, total_bonds, sep=":"))
-}
-
-replace_lipid_structure <- function(input_string) {
-  # Use a regex to find lipid structures within parentheses
-  pattern <- "\\(P?-?(\\d+:\\d+(?:/\\d+:\\d+)*)\\)"
-  
-  replace_function <- function(match, ...) {
-    lipid_structure <- gsub(pattern="\\(|\\)", replacement="", x=match) # Remove the parentheses
-    lipid_structure <- gsub(pattern="\\(|\\)", replacement="", x=match) # Remove the P- from PG 
-    summed_structure <- sum_lipid_structure(lipid_structure)
-    return(paste0("(", summed_structure, ")"))
-  }
-  result_string <- gsubfn::gsubfn(pattern=pattern, replace=replace_function, x=input_string)
-  return(result_string)
-}
-
-replace_lipid_structure_vector <- function(input_vector) {
-  # Apply the replace_lipid_structure function to each element of the vector
-  result_vector <- sapply(input_vector, replace_lipid_structure)
-  return(result_vector)
-}
-
 feols_df$compound_clean <- replace_lipid_structure_vector(feols_df$compound_clean)
 
 p <- EnhancedVolcano::EnhancedVolcano(toptable=feols_df, x="effect", y="p",
@@ -418,6 +420,7 @@ faith_pd_plotdata <- faith_pd_plotdata %>%
                     name, perl=T))
 
 faith_pd_plotdata$name <- str_replace_all(faith_pd_plotdata$name, z_pattern, "")
+faith_pd_plotdata$name <- replace_lipid_structure_vector(faith_pd_plotdata$name)
 
 faith_pd_plotdata$name <- faith_pd_plotdata$name %>% 
     reorder(faith_pd_plotdata$effect, FUN=first)
