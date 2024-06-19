@@ -487,6 +487,47 @@ summary(results_lme)
 
 p values were false discovery rate (fdr) corrected via a benjamini-hochberg correction. A volcano plot shows beta (the regression coefficient) along the x axis and -log10(uncorrected p value) on the y axis.
 
+```{r renaming_helper_fns}
+# this function sums up the number of carbons and double bonds in each lipid
+sum_lipid_structure <- function(lipid_structure) {
+  chains <- strsplit(lipid_structure, "/")[[1]]
+  total_length <- 0
+  total_bonds <- 0
+ 
+    for (chain in chains) {
+        parts <- strsplit(chain, ":")[[1]]
+        length <- as.integer(parts[1])
+        bonds <- as.integer(parts[2])
+        total_length <- total_length + length
+        total_bonds <- total_bonds + bonds
+  }
+  
+  # Return the total length and bonds as a single string
+  return(paste(total_length, total_bonds, sep=":"))
+}
+
+replace_lipid_structure <- function(input_string) {
+  # Use a regex to find lipid structures within parentheses
+  pattern <- "\\(P?-?(\\d+:\\d+(?:/\\d+:\\d+)*)\\)"
+  
+  replace_function <- function(match, ...) {
+    lipid_structure <- gsub(pattern="\\(|\\)", replacement="", x=match) # Remove the parentheses
+    lipid_structure <- gsub(pattern="\\(|\\)", replacement="", x=match) # Remove the P- from PG 
+    summed_structure <- sum_lipid_structure(lipid_structure)
+    return(paste0("(", summed_structure, ")"))
+  }
+  result_string <- gsubfn::gsubfn(pattern=pattern, replace=replace_function, x=input_string)
+  return(result_string)
+}
+
+replace_lipid_structure_vector <- function(input_vector) {
+  # Apply the replace_lipid_structure function to each element of the vector
+  result_vector <- sapply(input_vector, replace_lipid_structure)
+  return(result_vector)
+}
+
+```
+
 ```{r lme_results, echo=F, warning=F}
 results_dffilt_lme <- results_lme %>% 
     filter(max_influence < 4)
