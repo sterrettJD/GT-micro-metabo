@@ -584,6 +584,8 @@ volcano_df$label[
     sapply(function(x) grepl(";g__ :", 
                               x, perl=T))] <- NA
 
+volcano_df$label <- replace_lipid_structure_vector(volcano_df$label)
+
 p <- ggplot(data=volcano_df, aes(x=beta, y=-log10(p), col=sig, label=label)) + 
     geom_point() + 
     geom_text_repel(size = 2,
@@ -1070,7 +1072,7 @@ heatmap_df_long$plotmetabolite <- heatmap_df_long$plotmetabolite %>%
 z_pattern <- "\\(\\d+Z(?:,\\d+Z)*\\)"
 heatmap_df_long$plotmetabolite <- str_replace_all(heatmap_df_long$plotmetabolite, 
                                                   z_pattern, "")
-
+heatmap_df_long$plotmetabolite <- replace_lipid_structure_vector(heatmap_df_long$plotmetabolite)
 # transformer for color scale
 ssqrt <- scales::new_transform("signed sqrt", 
                       transform=function(x){sign(x)*sqrt(abs(x))},
