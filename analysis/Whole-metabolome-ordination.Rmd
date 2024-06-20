@@ -77,3 +77,26 @@ ggplot(aqueous_pca,
        y=paste0("PC2 (", aqueous_pca_var_explained[2], "%)"))
 
 ```
+
+
+# Lipid PCA
+```{r ordinate_lipids}
+lipids_prcomp <- prcomp(lipids_mat)
+lipids_pca <- as.data.frame(lipids_prcomp$x)
+lipids_pca_var_explained <- (lipids_prcomp$sdev/sum(lipids_prcomp$sdev))*100
+lipids_pca_var_explained <- round(lipids_pca_var_explained, digits=1)
+
+sample_group <- sapply(X=rownames(lipids_pca), 
+                      FUN=function(x){get_sample_group(x, metadata)})
+lipids_pca$group <- sample_group
+
+ggplot(lipids_pca, 
+       mapping=aes(x=PC1, y=PC2, color=sample_group)) +
+  geom_point(size=4, alpha=0.8) +
+  scale_color_manual(values=c("#dd8452","#4c72b0", "black"),
+                     name=NULL) +
+  theme_bw() +
+  labs(x=paste0("PC1 (", lipids_pca_var_explained[1], "%)"),
+       y=paste0("PC2 (", lipids_pca_var_explained[2], "%)"))
+
+```
