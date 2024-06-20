@@ -1,0 +1,36 @@
+---
+title: "Whole Metabolome Ordination"
+author: "John Sterrett"
+date: "2024-06-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r read_data}
+aqueous <- read.csv("../metabolome/Whole_plasma_metabolome_aq_log2.csv", skip=4)
+lipids <- read.csv("../metabolome/Whole_plasma_metabolome_lip_log2.csv", skip=4)
+```
+
+```{r clean_data_helpers}
+get_sample_columns <- function(column_names){
+  return (column_names[grepl(column_names, pattern="Log2.normalized")])
+}
+
+get_sample_ids <- function(column_names){
+  no_gt <- gsub(pattern="GT_001_Lipid_", replacement="", column_names)
+  no_log2 <- gsub(pattern="_area2height..Log2.normalized.", replacement="", no_gt)
+  return (no_log2)
+}
+
+```
+
+```{r clean_data}
+aqueous <- aqueous[get_sample_columns(colnames(aqueous))]
+lipids <- lipids[get_sample_columns(colnames(lipids))]
+
+colnames(lipids) <- get_sample_ids(colnames(lipids))
+colnames(aqueous) <- get_sample_ids(colnames(aqueous))
+```
