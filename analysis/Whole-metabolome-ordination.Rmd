@@ -7,11 +7,14 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
 ```
 
 ```{r read_data}
 aqueous <- read.csv("../metabolome/Whole_plasma_metabolome_aq_log2.csv", skip=4)
 lipids <- read.csv("../metabolome/Whole_plasma_metabolome_lip_log2.csv", skip=4)
+
+metadata <- read.csv("../metadata/mapping_nocomment.tsv", sep="\t")
 ```
 
 ```{r clean_data_helpers}
@@ -19,10 +22,25 @@ get_sample_columns <- function(column_names){
   return (column_names[grepl(column_names, pattern="Log2.normalized")])
 }
 
-get_sample_ids <- function(column_names){
-  no_gt <- gsub(pattern="GT_001_Lipid_", replacement="", column_names)
+get_sample_ids <- function(column_names, type="SBAQ"){
+  gt_pattern <- paste0("GT_001_", type, "_")
+  no_gt <- gsub(pattern=gt_pattern, replacement="", column_names)
   no_log2 <- gsub(pattern="_area2height..Log2.normalized.", replacement="", no_gt)
   return (no_log2)
+}
+
+get_sample_group <- function(sample_id, 
+                             metadata, metadata_column="PID"){
+  if(grepl(sample_id, pattern="QC")){
+    return("Quality Control")
+  }
+  
+  group <- metadata[metadata$MetaboSampleID==sample_id, metadata_column]
+  if (group=="Control"){
+    return ("Germ free")
+  } else {
+    return ("Humanized")
+  }
 }
 
 ```
@@ -31,6 +49,31 @@ get_sample_ids <- function(column_names){
 aqueous <- aqueous[get_sample_columns(colnames(aqueous))]
 lipids <- lipids[get_sample_columns(colnames(lipids))]
 
-colnames(lipids) <- get_sample_ids(colnames(lipids))
-colnames(aqueous) <- get_sample_ids(colnames(aqueous))
+colnames(aqueous) <- get_sample_ids(colnames(aqueous), type="SBAQ")
+colnames(lipids) <- get_sample_ids(colnames(lipids), type="Lipid")
+
+aqueous_mat <- as.matrix(t(aqueous))
+lipids_mat <- as.matrix(t(lipids))
+```
+
+# Aqueous PCA
+```{r ordinate_aqueous}
+aqueous_prcomp <- prcomp(aqueous_mat)
+aqueous_pca <- as.data.frame(aqueous_prcomp$x)
+aqueous_pca_var_explained <- (aqueous_prcomp$sdev/sum(aqueous_prcomp$sdev))*100
+aqueous_pca_var_explained <- round(aqueous_pca_var_explained, digits=1)
+
+sample_group <- sapply(X=rownames(aqueous_pca), 
+                      FUN=function(x){get_sample_group(x, metadata)})
+aqueous_pca$group <- sample_group
+
+ggplot(aqueous_pca, 
+       mapping=aes(x=PC1, y=PC2, color=sample_group)) +
+  geom_point(size=4, alpha=0.8) +
+  scale_color_manual(values=c("#dd8452","#4c72b0", "black"),
+                     name=NULL) +
+  theme_bw() +
+  labs(x=paste0("PC1 (", aqueous_pca_var_explained[1], "%)"),
+       y=paste0("PC2 (", aqueous_pca_var_explained[2], "%)"))
+
 ```
