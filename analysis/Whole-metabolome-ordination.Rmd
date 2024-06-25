@@ -52,6 +52,9 @@ lipids <- lipids[get_sample_columns(colnames(lipids))]
 colnames(aqueous) <- get_sample_ids(colnames(aqueous), type="SBAQ")
 colnames(lipids) <- get_sample_ids(colnames(lipids), type="Lipid")
 
+# Remove post-run cleanup from lipidsb
+lipids <- lipids[,!grepl("Post_Run", colnames(lipids),)]
+
 aqueous_mat <- as.matrix(t(aqueous))
 lipids_mat <- as.matrix(t(lipids))
 ```
@@ -60,8 +63,8 @@ lipids_mat <- as.matrix(t(lipids))
 ```{r ordinate_aqueous}
 aqueous_prcomp <- prcomp(aqueous_mat)
 aqueous_pca <- as.data.frame(aqueous_prcomp$x)
-aqueous_pca_var_explained <- (aqueous_prcomp$sdev/sum(aqueous_prcomp$sdev))*100
-aqueous_pca_var_explained <- round(aqueous_pca_var_explained, digits=1)
+aqueous_pca_var_explained <- summary(aqueous_prcomp)$importance[2,]*100
+aqueous_pca_var_explained <- round(x=aqueous_pca_var_explained, digits=1)
 
 sample_group <- sapply(X=rownames(aqueous_pca), 
                       FUN=function(x){get_sample_group(x, metadata)})
@@ -75,7 +78,8 @@ ggplot(aqueous_pca,
   theme_bw() +
   labs(x=paste0("PC1 (", aqueous_pca_var_explained[1], "%)"),
        y=paste0("PC2 (", aqueous_pca_var_explained[2], "%)"))
-
+ggsave("../figures/whole_metabolome_pca.png")
+ggsave("../figures/whole_metabolome_pca.pdf")
 ```
 
 
@@ -83,7 +87,7 @@ ggplot(aqueous_pca,
 ```{r ordinate_lipids}
 lipids_prcomp <- prcomp(lipids_mat)
 lipids_pca <- as.data.frame(lipids_prcomp$x)
-lipids_pca_var_explained <- (lipids_prcomp$sdev/sum(lipids_prcomp$sdev))*100
+lipids_pca_var_explained <- summary(lipids_prcomp)$importance[2,]*100
 lipids_pca_var_explained <- round(lipids_pca_var_explained, digits=1)
 
 sample_group <- sapply(X=rownames(lipids_pca), 
@@ -97,6 +101,11 @@ ggplot(lipids_pca,
                      name=NULL) +
   theme_bw() +
   labs(x=paste0("PC1 (", lipids_pca_var_explained[1], "%)"),
-       y=paste0("PC2 (", lipids_pca_var_explained[2], "%)"))
+       y=paste0("PC2 (", lipids_pca_var_explained[2], "%)")) 
+ggsave("../figures/whole_lipidome_pca.png")
+ggsave("../figures/whole_lipidome_pca.pdf")
 
+#+
+#  ggrepel::geom_label_repel(label=rownames(lipids_pca)) +
+#    xlim(0, 100)
 ```
