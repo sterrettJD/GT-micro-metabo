@@ -64,22 +64,28 @@ lipids_mat <- as.matrix(t(lipids))
 aqueous_prcomp <- prcomp(aqueous_mat)
 aqueous_pca <- as.data.frame(aqueous_prcomp$x)
 aqueous_pca_var_explained <- summary(aqueous_prcomp)$importance[2,]*100
-aqueous_pca_var_explained <- round(x=aqueous_pca_var_explained, digits=1)
+aqueous_pca_var_explained <- format(round(x=aqueous_pca_var_explained, digits=1), 
+                                    1)
 
-sample_group <- sapply(X=rownames(aqueous_pca), 
+sample_groups <- sapply(X=rownames(aqueous_pca), 
                       FUN=function(x){get_sample_group(x, metadata)})
-aqueous_pca$group <- sample_group
 
-ggplot(aqueous_pca, 
+aqueous_pca$sample_group <- sample_groups
+aqueous_pca <- merge(aqueous_pca, metadata, by.x="row.names", by.y="MetaboSampleID", all.x=T)
+aqueous_pca[is.null(aqueous_pca$Group), "Group"] <- "Quality Control"
+
+a <- ggplot(aqueous_pca, 
        mapping=aes(x=PC1, y=PC2, color=sample_group)) +
   geom_point(size=4, alpha=0.8) +
   scale_color_manual(values=c("#dd8452","#4c72b0", "black"),
                      name=NULL) +
-  theme_bw() +
+  theme_classic() +
   labs(x=paste0("PC1 (", aqueous_pca_var_explained[1], "%)"),
        y=paste0("PC2 (", aqueous_pca_var_explained[2], "%)"))
-ggsave("../figures/whole_metabolome_pca.png")
-ggsave("../figures/whole_metabolome_pca.pdf")
+a
+
+ggsave("../figures/whole_metabolome_pca.png", a)
+ggsave("../figures/whole_metabolome_pca.pdf", a)
 ```
 
 
@@ -88,24 +94,33 @@ ggsave("../figures/whole_metabolome_pca.pdf")
 lipids_prcomp <- prcomp(lipids_mat)
 lipids_pca <- as.data.frame(lipids_prcomp$x)
 lipids_pca_var_explained <- summary(lipids_prcomp)$importance[2,]*100
-lipids_pca_var_explained <- round(lipids_pca_var_explained, digits=1)
+lipids_pca_var_explained <- format(round(lipids_pca_var_explained, digits=1),
+                                   1)
 
 sample_group <- sapply(X=rownames(lipids_pca), 
                       FUN=function(x){get_sample_group(x, metadata)})
 lipids_pca$group <- sample_group
 
-ggplot(lipids_pca, 
+b <- ggplot(lipids_pca, 
        mapping=aes(x=PC1, y=PC2, color=sample_group)) +
   geom_point(size=4, alpha=0.8) +
   scale_color_manual(values=c("#dd8452","#4c72b0", "black"),
                      name=NULL) +
-  theme_bw() +
+  theme_classic() +
   labs(x=paste0("PC1 (", lipids_pca_var_explained[1], "%)"),
-       y=paste0("PC2 (", lipids_pca_var_explained[2], "%)")) 
-ggsave("../figures/whole_lipidome_pca.png")
-ggsave("../figures/whole_lipidome_pca.pdf")
+       y=paste0("PC2 (", lipids_pca_var_explained[2], "%)"))
 
-#+
-#  ggrepel::geom_label_repel(label=rownames(lipids_pca)) +
-#    xlim(0, 100)
+b
+ggsave("../figures/whole_lipidome_pca.png", b)
+ggsave("../figures/whole_lipidome_pca.pdf", b)
+
+```
+
+```{r fig.height=6, fig.width=10}
+a_nolegend <- a + guides(color="none")
+full_plot <- cowplot::plot_grid(a_nolegend, b, labels=c("A", "B"), rel_widths=c(1,1.4))
+full_plot
+
+ggsave("../figures/whole_pca.pdf", full_plot, height=6, width=10)
+ggsave("../figures/whole_pca.png", full_plot, height=6, width=10)
 ```
