@@ -223,8 +223,9 @@ replace_lipid_structure_vector <- function(input_vector) {
   result_vector <- sapply(input_vector, replace_lipid_structure)
   return(result_vector)
 }
-
-adonis_df$compound_clean <- replace_lipid_structure_vector(adonis_df$compound)
+z_pattern <- "\\(\\d+Z(?:,\\d+Z)*\\)"
+adonis_df$compound_clean <- str_replace_all(adonis_df$compound, z_pattern, "")
+adonis_df$compound_clean <- replace_lipid_structure_vector(adonis_df$compound_clean)
 
 adonis_df[adonis_df$p < 0.01,] %>%
     knitr::kable()
@@ -388,6 +389,7 @@ feols_df %>%
     mutate(p=round(p, digits=3),
            padj=round(padj, digits=3),
            effect=round(effect, digits=2)) %>%
+    select(c(compound_clean, p, padj, effect)) %>%
     write.csv("feols_faith_results_p_0.1.csv")
 
 compounds_to_plot_faith <- feols_df %>%
