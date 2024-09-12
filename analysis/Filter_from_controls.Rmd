@@ -24,8 +24,13 @@ matcher <- function(x, pattern="not found"){
     return (lowered == pattern)
 }
 
-lipids.to.use <- lipids %>% dplyr::filter(matcher(Searched.by.ion))
-aqueous.to.use <- aqueous %>% dplyr::filter(matcher(Searched.by.ion))
+lipids.to.use <- lipids %>% 
+    dplyr::filter(matcher(Searched.by.ion)) %>%
+    dplyr::select(-c("Searched.by.ion"))
+
+aqueous.to.use <- aqueous %>% 
+    dplyr::filter(matcher(Searched.by.ion)) %>%
+    dplyr::select(-c("Searched.by.ion"))
 ```
 
 # Filtering numbers
