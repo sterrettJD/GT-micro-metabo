@@ -1,0 +1,53 @@
+---
+title: "Filter-from-controls"
+author: "John Sterrett"
+date: "2024-09-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+# Load data
+```{r}
+lipids <- read.csv("../metabolome/Lipid_compounds_found.csv")
+aqueous <- read.csv("../metabolome/Aqueous_compounds_found.csv")
+```
+
+# Filter data
+```{r}
+matcher <- function(x, pattern="not found"){
+    squished <- stringr::str_squish(x)
+    lowered <- stringr::str_to_lower(squished)
+    return (lowered == pattern)
+}
+
+lipids.to.use <- lipids %>% dplyr::filter(matcher(Searched.by.ion))
+aqueous.to.use <- aqueous %>% dplyr::filter(matcher(Searched.by.ion))
+```
+
+# Filtering numbers
+```{r}
+info_printer <- function(title, original, filtered){
+    orig.rows <- nrow(original)
+    filtered.rows <- nrow(filtered)
+    
+    print(paste(title, "---", 
+                "The original dataset had", orig.rows,
+                "compounds, and the filtered dataset has",
+                filtered.rows, "compounds.",
+                orig.rows-filtered.rows, 
+                "compounds were removed."))
+}
+
+info_printer(title="LIPIDS", original=lipids, filtered=lipids.to.use)
+info_printer(title="AQUEOUS", original=aqueous, filtered=aqueous.to.use)
+```
+
+# Save data
+```{r}
+write.csv(lipids.to.use, "../metabolome/Lipid_compounds_NOT_found.csv")
+write.csv(aqueous.to.use, "../metabolome/Aqueous_compounds_NOT_found.csv")
+```
