@@ -40,7 +40,7 @@ genus_names <- row.names(genus)
 # convert to relative abundance
 genus <- sapply(genus,
                 prop.table) * 100
-genus <- genus %>% as.data.frame(row.names = genus_names)
+genus <- genus %>% as.data.frame(row.names=genus_names)
 
 # check that all colsums are 100
 print(
@@ -56,32 +56,58 @@ metadata <- fread("../metadata/mapping.tsv", sep = "\t")
 rownames(metadata) <- metadata$`MetaboSampleID`
 
 # read in metabolites
-aqueous <- fread("../metabolome/raw_aqueous.tsv",
-                 sep="\t", header = T) %>% as.data.frame()
-aqueous <- aqueous %>% remove_rownames() %>% column_to_rownames(var="V1")
+aqueous <- fread("../metabolome/Aqueous_compounds_NOT_found.tsv",
+                 header=T, 
+                 data.table=F) %>% 
+    t() %>%
+    as.data.frame()
 
+# Trim some fluff from rownames
+rownames(aqueous) <- gsub("report.results_GT_001_SBAQ_","", rownames(aqueous))
+rownames(aqueous) <- gsub("\\(raw\\)","", rownames(aqueous))
+
+# Remove the log-transformed data. We'll do our own transformation
+aqueous <- aqueous[!grepl(pattern="Log2", x=rownames(aqueous)),]
+
+# Make sure we keep the compound names as colnames
+colnames(aqueous) <- aqueous["Compound Name", ]
+
+# Remove data that are unnecessary for this analysis
 aqueous <- aqueous[rownames(aqueous) %ni% c("Compound Name", "Retention Time",
-                                            "Measured Retention Time", "Product Mass",
-                                            "QualifierMass", "CASNumber",
-                                            "CompoundType", "ISTDCompoundName", 
-                                            "Mass Column"),]
+                                          "Measured Retention Time", "Product Mass",
+                                         "QualifierMass", "CASNumber",
+                                         "CompoundType", "ISTDCompoundName", 
+                                         "Mass Column", "Compound"),]
+
 aqueous <- mutate_all(aqueous, function(x) as.numeric(as.character(x)))
 
 
 # read in lipids
-lipids <- fread("../metabolome/raw_lipid.tsv",
-                sep="\t",
-                header = T)
+lipids <- fread("../metabolome/Lipid_compounds_NOT_found.tsv",
+                header=T, 
+                 data.table=F) %>% 
+    t() %>%
+    as.data.frame()
 
-rownames(lipids) <- lipids$V1
-lipids <- lipids %>% remove_rownames() %>% column_to_rownames(var="V1")
+# Trim some fluff from rownames
+rownames(lipids) <- gsub("report.results_GT_001_Lipid_","", rownames(lipids))
+rownames(lipids) <- gsub("\\(raw\\)","", rownames(lipids))
 
+# Remove the log-transformed data. We'll do our own transformation
+lipids <- lipids[!grepl(pattern="Log2", x=rownames(lipids)),]
+
+# Make sure we keep the compound names as colnames
+colnames(lipids) <- lipids["Compound Name", ]
+
+# Remove data that are unnecessary for this analysis
 lipids <- lipids[rownames(lipids) %ni% c("Compound Name", "Retention Time",
-                                         "Measured Retention Time", "Product Mass",
+                                          "Measured Retention Time", "Product Mass",
                                          "QualifierMass", "CASNumber",
                                          "CompoundType", "ISTDCompoundName", 
-                                         "Mass Column"),]
+                                         "Mass Column", "Compound"),]
+
 lipids <- mutate_all(lipids, function(x) as.numeric(as.character(x)))
+
 
 # map genus sample ids to metabolomics sample ids
 new_genus_sample_ids <- c()
@@ -97,7 +123,6 @@ genus <- genus[order(as.numeric(rownames(genus))),,drop=FALSE]
 metadata <- metadata[order(as.numeric(rownames(metadata))),,drop=FALSE]
 aqueous <- aqueous[order(as.numeric(rownames(aqueous))),,drop=FALSE]
 lipids <- lipids[order(as.numeric(rownames(lipids))),,drop=FALSE]
-
 ```
 
 # Transform data
@@ -549,6 +574,84 @@ ggsave("../figures/LME-microbe-metabolite-volcano_with_GF.png", plot=p, height=8
 ggsave("../figures/LME-microbe-metabolite-volcano_with_GF.pdf", plot=p, height=8, width=8)
 
 ```
+
+```{r lme_stacked_bar, echo=F, fig.height=16, fig.width=8}
+dffilt_lme_bymicrobe <- results_dffilt_lme %>%
+    filter(microbe!="k__Bacteria;__;__;__;__;__") %>%
+    group_by(microbe) %>%
+    summarise(fdr_up=sum(sig=="FDR p < 0.05" & beta>0),
+              fdr_down=sum(sig=="FDR p < 0.05" & beta<0),
+              up=sum(sig=="p < 0.05" & beta>0),
+              down=sum(sig=="p < 0.05" & beta<0),
+              unchanged=sum(sig=="p > 0.05" | is.na(sig))) %>%
+    mutate(microbe=sapply(microbe, 
+                    function(x) str_split(x, "f__")[[1]][2])) %>%
+    filter(microbe %ni% c(";g__", "NA", NA))
+
+# order microbes by how many positive relationships they have
+microbe_order <- dffilt_lme_bymicrobe$microbe[
+                    order(dffilt_lme_bymicrobe$fdr_up + 
+                              dffilt_lme_bymicrobe$up)]
+
+dffilt_lme_bymicrobe_long <- dffilt_lme_bymicrobe %>% 
+    pivot_longer(cols=-microbe, 
+                 names_to="significance",
+                 values_to="n")
+
+dffilt_lme_bymicrobe_long$significance <- factor(dffilt_lme_bymicrobe_long$significance,
+                                                 levels=c("fdr_down", "down",
+                                                    "unchanged", 
+                                                    "up", "fdr_up"))
+
+    
+ggplot(dffilt_lme_bymicrobe_long,
+       mapping=aes(x=n, y=microbe, fill=significance)) +
+    geom_bar(position="stack", stat="identity") +
+    scale_fill_manual(values=c("fdr_down"="blue", "down"="lightblue", 
+                               "unchanged"="lightgrey", 
+                               "up"="red", "fdr_up"="darkred")) +
+    scale_y_discrete(limits=microbe_order) + 
+    theme_bw()
+
+
+
+
+dffilt_lme_bycompound <- results_dffilt_lme %>%
+    filter(microbe!="k__Bacteria;__;__;__;__;__") %>%
+    group_by(metabolite) %>%
+    summarise(fdr_up=sum(sig=="FDR p < 0.05" & beta>0),
+              fdr_down=sum(sig=="FDR p < 0.05" & beta<0),
+              up=sum(sig=="p < 0.05" & beta>0),
+              down=sum(sig=="p < 0.05" & beta<0),
+              unchanged=sum(sig=="p > 0.05" | is.na(sig)))
+
+# order microbes by how many positive relationships they have
+metabolite_order <- dffilt_lme_bycompound$metabolite[
+                    order(dffilt_lme_bycompound$fdr_up + 
+                              dffilt_lme_bycompound$up)]
+
+dffilt_lme_bycompound_long <- dffilt_lme_bycompound %>% 
+    pivot_longer(cols=-metabolite, 
+                 names_to="significance",
+                 values_to="n")
+
+dffilt_lme_bycompound_long$significance <- factor(dffilt_lme_bycompound_long$significance,
+                                                 levels=c("fdr_down", "down",
+                                                    "unchanged", 
+                                                    "up", "fdr_up"))
+
+    
+ggplot(dffilt_lme_bycompound_long,
+       mapping=aes(x=n, y=metabolite, fill=significance)) +
+    geom_bar(position="stack", stat="identity") +
+    scale_fill_manual(values=c("fdr_down"="blue", "down"="lightblue", 
+                               "unchanged"="lightgrey", 
+                               "up"="red", "fdr_up"="darkred")) +
+    scale_y_discrete(limits=metabolite_order) + 
+    theme_bw()
+
+```
+
 
 ```{r sig_lme_tables, echo=F}
 sig_intx <- results_dffilt_lme %>% 
