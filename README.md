@@ -5,3 +5,12 @@ Studies have suggested that phytochemicals in green tea have systemic anti-infla
 
 ### Importance 
 Foods contain thousands of unique and biologically important compounds beyond the main nutrients often considered, such as those listed on nutrition facts labels. In mammals, many of these compounds are altered or broken down by the community of microbes in the colon. This means that these microbes impact the thousands of biologically important compounds we consume, and that understanding microbial breakdown of food-derived compounds will be important for understanding how foods impact health. We used metabolomics to track green tea compounds in plasma of mice with and without complex microbiomes. From this, we can start to recognize certain groups of green tea-derived compounds that are impacted by mammalian microbiomes. This research presents a novel technique for understanding microbial metabolism of food-derived compounds in the gut, which can be applied to other health-relevant foods.
+
+## Repository contents
+1. `analysis/` contains R markdown files, Jupyter notebooks, and scripts used for this paper.
+2. `metadata/` contains sample metadata.
+3. `microbiome/` contains microbiome count data, ASV representative sequences, the phylogeny used, and a taxonomy table.
+4. `metabolome/` contains the metabolomics data, with green tea compound abundances per sample.
+    1. Any analysis should use the files labeled `<Aqueous/Lipid>_compounds_NOT_found.tsv`. 
+    2. Files labeled `<Aqueous/Lipid>_compounds_found.tsv` are results of searching and contain compounds that were both found and not found in control mice not fed green tea.
+5. `neurotransmitters/` contains data on neurochemicals per sample. These data are not used in the publication.
