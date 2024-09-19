@@ -33,37 +33,61 @@ setwd("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis"
 # read in genus level table
 uni <- qiime2R::read_qza("../microbiome/core-metrics/unweighted_unifrac_distance_matrix.qza")$data 
 
-
 # read in metadata
 metadata <- fread("../metadata/mapping.tsv", sep = "\t")
 rownames(metadata) <- metadata$`MetaboSampleID`
 
 # read in metabolites
-aqueous <- fread("../metabolome/raw_aqueous.tsv",
-                 sep="\t", header = T) %>% as.data.frame()
-aqueous <- aqueous %>% remove_rownames() %>% column_to_rownames(var="V1")
+aqueous <- fread("../metabolome/Aqueous_compounds_NOT_found.tsv",
+                 header=T, 
+                 data.table=F) %>% 
+    t() %>%
+    as.data.frame()
 
+# Trim some fluff from rownames
+rownames(aqueous) <- gsub("report.results_GT_001_SBAQ_","", rownames(aqueous))
+rownames(aqueous) <- gsub("\\(raw\\)","", rownames(aqueous))
+
+# Remove the log-transformed data. We'll do our own transformation
+aqueous <- aqueous[!grepl(pattern="Log2", x=rownames(aqueous)),]
+
+# Make sure we keep the compound names as colnames
+colnames(aqueous) <- aqueous["Compound Name", ]
+
+# Remove data that are unnecessary for this analysis
 aqueous <- aqueous[rownames(aqueous) %ni% c("Compound Name", "Retention Time",
                                           "Measured Retention Time", "Product Mass",
                                          "QualifierMass", "CASNumber",
                                          "CompoundType", "ISTDCompoundName", 
-                                         "Mass Column"),]
+                                         "Mass Column", "Compound"),]
+
 aqueous <- mutate_all(aqueous, function(x) as.numeric(as.character(x)))
 
 
 # read in lipids
-lipids <- fread("../metabolome/raw_lipid.tsv",
-                sep="\t",
-                header = T)
+lipids <- fread("../metabolome/Lipid_compounds_NOT_found.tsv",
+                header=T, 
+                 data.table=F) %>% 
+    t() %>%
+    as.data.frame()
 
-rownames(lipids) <- lipids$V1
-lipids <- lipids %>% remove_rownames() %>% column_to_rownames(var="V1")
+# Trim some fluff from rownames
+rownames(lipids) <- gsub("report.results_GT_001_Lipid_","", rownames(lipids))
+rownames(lipids) <- gsub("\\(raw\\)","", rownames(lipids))
 
+# Remove the log-transformed data. We'll do our own transformation
+lipids <- lipids[!grepl(pattern="Log2", x=rownames(lipids)),]
+
+# Make sure we keep the compound names as colnames
+colnames(lipids) <- lipids["Compound Name", ]
+
+# Remove data that are unnecessary for this analysis
 lipids <- lipids[rownames(lipids) %ni% c("Compound Name", "Retention Time",
                                           "Measured Retention Time", "Product Mass",
                                          "QualifierMass", "CASNumber",
                                          "CompoundType", "ISTDCompoundName", 
-                                         "Mass Column"),]
+                                         "Mass Column", "Compound"),]
+
 lipids <- mutate_all(lipids, function(x) as.numeric(as.character(x)))
 
 # map genus sample ids to metabolomics sample ids
@@ -703,7 +727,8 @@ lipids_bc_pcoa_coords <- lipids_bc_pcoa$vectors
 ```
 
 ```{r run_protest}
-protest(uni_pcoa_coords[,1:10], aqueous_bc_pcoa_coords[,1:10], permutations=9999)
+# Have to run it with the first 9 axes because the aqueous pcoa only has 9 axes
+protest(uni_pcoa_coords[,1:9], aqueous_bc_pcoa_coords[,1:9], permutations=9999)
 protest(uni_pcoa_coords[,1:10], lipids_bc_pcoa_coords[,1:10], permutations=9999)
 
 
