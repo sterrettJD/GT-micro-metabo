@@ -30,7 +30,6 @@ setwd("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis"
 # Load data
 
 ```{r load_data, echo=F}
-# read in genus level table
 uni <- qiime2R::read_qza("../microbiome/core-metrics/unweighted_unifrac_distance_matrix.qza")$data 
 
 # read in metadata
