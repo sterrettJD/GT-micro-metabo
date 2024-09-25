@@ -63,10 +63,12 @@ distances.between.centroids <- usedist::dist_subset(uni,
 
 # Compare within vs between groups
 ```{r}
+# 2 column df, one with distances and the other with the distance type (between or within)
 dist.df <- data.frame(distance=c(distances.within.groups, distances.between.centroids),
                       type=c(rep("Within donor", length(distances.within.groups)),
                              rep("Between donor centroids", length(distances.between.centroids)))
                       )
+
 # visualize differences
 dist.df %>%
     ggplot(mapping=aes(x=type, y=distance)) +
@@ -79,7 +81,7 @@ dist.df %>%
 
 
 print_mean_ci_for_group <- function(dist.df, dist.col, group.col, group){
-    # Get confidence intervals
+    # Get confidence intervals via linear model 
     form <- as.formula(paste0(dist.col, " ~ 1"))
     mod <- lm(form, data=dist.df[dist.df[,group.col]==group,])
     ci <- confint(mod, "(Intercept)")
@@ -87,6 +89,7 @@ print_mean_ci_for_group <- function(dist.df, dist.col, group.col, group){
     upper <- ci[2]
     mean <- as.vector(coef(mod)["(Intercept)"])
     
+    # create nice little message
     m <- paste0("Group: ", group, "\n",
                 "mean = ", round(mean, 3), "\n",
                 "95% confidence interval [", round(lower, 3), " - ",
