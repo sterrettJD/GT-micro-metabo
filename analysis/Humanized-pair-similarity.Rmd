@@ -1,0 +1,100 @@
+---
+title: "Humanized pair similarity"
+author: "John Sterrett"
+date: "2023-03-07"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse,
+               data.table,
+               ggplot2,
+               phyloseq,
+               magrittr)
+#setwd("analysis")
+```
+
+# Load data
+```{r load}
+uni <- qiime2R::read_qza("../microbiome/core-metrics/unweighted_unifrac_distance_matrix.qza")$data 
+
+# read in metadata
+metadata <- fread("../metadata/mapping.tsv", sep = "\t", data.table=F)
+rownames(metadata) <- metadata$`#SampleID`
+
+# Order it like the uni dist matrix
+metadata <- metadata[labels(uni),]
+```
+
+# Quantify distances within pairs
+```{r}
+get_dist_within_group <- function(distmat, metadata, group.col, id){
+    # get sample IDs for the group
+    sample.ids <- row.names(metadata[metadata[,group.col]==id,])
+    # Get distances corresponding to those IDs
+    dists <- usedist::dist_subset(distmat, sample.ids)
+    # Just return the values
+    return(as.vector(dists))
+}
+
+# Get dists within groups
+groups <- unique(metadata[metadata$PID!="Control", "PID"])
+distances.within.groups <- sapply(groups, 
+                                  function(group.id){
+                                      get_dist_within_group(uni, 
+                                                            metadata, "PID", 
+                                                            group.id)})
+
+```
+
+# Quantify distances between centroids
+```{r}
+# Remove controls, then get dists between group centroids based on PID
+distances.between.centroids <- usedist::dist_subset(uni, 
+                                rownames(metadata[metadata$PID!="Control",])) %>%
+    usedist::dist_multi_centroids(g=metadata[metadata$PID!="Control", "PID"]) %>%
+    as.vector()
+
+```
+
+# Compare within vs between groups
+```{r}
+dist.df <- data.frame(distance=c(distances.within.groups, distances.between.centroids),
+                      type=c(rep("Within donor", length(distances.within.groups)),
+                             rep("Between donor centroids", length(distances.between.centroids)))
+                      )
+# visualize differences
+dist.df %>%
+    ggplot(mapping=aes(x=type, y=distance)) +
+    ggbeeswarm::geom_beeswarm() +
+    ylim(0,1) +
+    labs(y="Unweighted Unifrac Distance",
+         x="") +
+    theme_bw()
+
+
+
+print_mean_ci_for_group <- function(dist.df, dist.col, group.col, group){
+    # Get confidence intervals
+    form <- as.formula(paste0(dist.col, " ~ 1"))
+    mod <- lm(form, data=dist.df[dist.df[,group.col]==group,])
+    ci <- confint(mod, "(Intercept)")
+    lower <- ci[1]
+    upper <- ci[2]
+    mean <- as.vector(coef(mod)["(Intercept)"])
+    
+    m <- paste0("Group: ", group, "\n",
+                "mean = ", round(mean, 3), "\n",
+                "95% confidence interval [", round(lower, 3), " - ",
+                round(upper, 3), "]")    
+    cat(m)
+}
+
+print_mean_ci_for_group(dist.df, "distance", "type", "Within donor")
+print_mean_ci_for_group(dist.df, "distance", "type", "Between donor centroids")
+
+``` 
