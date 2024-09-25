@@ -100,4 +100,11 @@ print_mean_ci_for_group <- function(dist.df, dist.col, group.col, group){
 print_mean_ci_for_group(dist.df, "distance", "type", "Within donor")
 print_mean_ci_for_group(dist.df, "distance", "type", "Between donor centroids")
 
+```
+
+# Adonis
+Also running a PERMANOVA to see if the variation between groups is larger than the variation within groups
+```{r}
+subset.uni <- usedist::dist_subset(uni, rownames(metadata[metadata$PID!="Control",]))
+vegan::adonis2(subset.uni ~ metadata[metadata$PID!="Control", "PID"], permutations=9999)
 ``` 
