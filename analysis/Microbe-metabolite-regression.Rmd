@@ -581,6 +581,10 @@ table(results_dffilt_lme$sig) %>% knitr::kable(caption = "Significance levels fo
 volcano_df <- results_dffilt_lme
 volcano_df$label <- NA
 
+# trim off the retention time
+volcano_df$metabolite <- volcano_df$metabolite %>%
+    sapply(function(x) substring(x, 1, nchar(x)-6)) 
+
 # search for unannotated compounds
 volcano_df$annotated <- volcano_df$metabolite %>% 
     sapply(function(x) !grepl("^[C][\\d]{2,}", 
@@ -613,6 +617,10 @@ volcano_df$label[
     volcano_df$label %>% 
     sapply(function(x) grepl(";g__ :", 
                               x, perl=T))] <- NA
+# replace Zs in lipid labels
+z_pattern <- "\\(\\d+Z(?:,\\d+Z)*\\)"
+volcano_df$label <- str_replace_all(volcano_df$label, 
+                                    z_pattern, "")
 
 volcano_df$label <- replace_lipid_structure_vector(volcano_df$label)
 
@@ -673,7 +681,11 @@ ggplot(dffilt_lme_bymicrobe_long,
     scale_y_discrete(limits=microbe_order) + 
     theme_bw() +
     labs(x="Number of relationships with compounds", y="") +
-    theme(legend.title=element_blank())
+    theme(legend.title=element_blank(), 
+          legend.text=element_text(size=12),
+          axis.text.y=element_text(size=12),
+          axis.text.x=element_text(size=12),
+          axis.title.x=element_text(size=14))
 ggsave("../figures/LME-microbe-metabolite-summed-bars.png", height=10, width=8)
 ggsave("../figures/LME-microbe-metabolite-summed-bars.pdf", height=10, width=8)
 
@@ -817,94 +829,94 @@ run_lme_within <- function(feature_1, feature_2, scale_features=F, sparsity_cuto
 # Commented out to only run when desired, not when knitting
 
 #setup parallel backend to use many processors
-cores <- detectCores()
-cl <- makeCluster(cores[1]-1) #not to overload your computer
-doParallel::registerDoParallel(cl)
-
-registerDoSNOW(cl)
-
-pb <- txtProgressBar(max = ncol(genus)^2, style = 3)
-progress <- function(n) setTxtProgressBar(pb, n)
-opts <- list(progress = progress)
-
-# run microbe-microbe regressions
-# dimensions should be (num features^2 - num features )/ 2
-# because it's only half of corr matrix and self corr will be 1
-results_lme_genus <- data.frame(matrix(nrow=(ncol(genus)^2 - ncol(genus))/2,
-                                       ncol=5))
-names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
-
-ptm <- proc.time()
-y_lme <- foreach(i=1:ncol(genus),
-             .combine=cbind,
-             .options.snow = opts) %:%
-    foreach(j=1:ncol(genus),
-            .combine=cbind,
-            .options.snow = opts) %dopar% {
-                if(j>i){
-                    feature_1 <- genus_names[[i]]
-                    feature_2 <- genus_names[[j]]
-
-
-
-                    run_lme_within(feature_1, feature_2)
-
-                }
-            }
-
-print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
-
-
-results_lme_genus$feature_1 <- unlist(y_lme[1,])
-results_lme_genus$feature_2 <- unlist(y_lme[2,])
-results_lme_genus$p <- unlist(y_lme[3,])
-results_lme_genus$beta <- unlist(y_lme[4,])
-results_lme_genus$max_influence <- unlist(y_lme[5,])
-
-
-# metabolomics
-pb <- txtProgressBar(max = ncol(metabo_df)^2, style = 3)
-progress <- function(n) setTxtProgressBar(pb, n)
-opts <- list(progress = progress)
-
-# setup results dataframe
-# dimensions should be (num features^2 - num features )/ 2
-# because it's only half of corr matrix and self corr will be 1
-results_lme_metabo <- data.frame(matrix(nrow=(ncol(metabo_df)^2 - ncol(metabo_df))/2,
-                                       ncol=5))
-names(results_lme_metabo) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
-
-ptm <- proc.time()
-y_lme <- foreach(i=1:ncol(metabo_df),
-             .combine=cbind,
-             .options.snow = opts) %:%
-    foreach(j=1:ncol(metabo_df),
-            .combine=cbind,
-            .options.snow = opts) %dopar% {
-                if(j>i){
-                    feature_1 <- names(metabo_df)[[i]]
-                    feature_2 <- names(metabo_df)[[j]]
-
-                    run_lme_within(feature_1, feature_2,
-                                   scale_features = T)
-
-                }
-            }
-print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
-
-#stop cluster
-stopCluster(cl)
-
-results_lme_metabo$feature_1 <- unlist(y_lme[1,])
-results_lme_metabo$feature_2 <- unlist(y_lme[2,])
-results_lme_metabo$p <- unlist(y_lme[3,])
-results_lme_metabo$beta <- unlist(y_lme[4,])
-results_lme_metabo$max_influence <- unlist(y_lme[5,])
-
-results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
-
-
-write.csv(results_lme_within, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
+# cores <- detectCores()
+# cl <- makeCluster(cores[1]-1) #not to overload your computer
+# doParallel::registerDoParallel(cl)
+# 
+# registerDoSNOW(cl)
+# 
+# pb <- txtProgressBar(max = ncol(genus)^2, style = 3)
+# progress <- function(n) setTxtProgressBar(pb, n)
+# opts <- list(progress = progress)
+# 
+# # run microbe-microbe regressions
+# # dimensions should be (num features^2 - num features )/ 2
+# # because it's only half of corr matrix and self corr will be 1
+# results_lme_genus <- data.frame(matrix(nrow=(ncol(genus)^2 - ncol(genus))/2,
+#                                        ncol=5))
+# names(results_lme_genus) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
+# 
+# ptm <- proc.time()
+# y_lme <- foreach(i=1:ncol(genus),
+#              .combine=cbind,
+#              .options.snow = opts) %:%
+#     foreach(j=1:ncol(genus),
+#             .combine=cbind,
+#             .options.snow = opts) %dopar% {
+#                 if(j>i){
+#                     feature_1 <- genus_names[[i]]
+#                     feature_2 <- genus_names[[j]]
+# 
+# 
+# 
+#                     run_lme_within(feature_1, feature_2)
+# 
+#                 }
+#             }
+# 
+# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+# 
+# 
+# results_lme_genus$feature_1 <- unlist(y_lme[1,])
+# results_lme_genus$feature_2 <- unlist(y_lme[2,])
+# results_lme_genus$p <- unlist(y_lme[3,])
+# results_lme_genus$beta <- unlist(y_lme[4,])
+# results_lme_genus$max_influence <- unlist(y_lme[5,])
+# 
+# 
+# # metabolomics
+# pb <- txtProgressBar(max = ncol(metabo_df)^2, style = 3)
+# progress <- function(n) setTxtProgressBar(pb, n)
+# opts <- list(progress = progress)
+# 
+# # setup results dataframe
+# # dimensions should be (num features^2 - num features )/ 2
+# # because it's only half of corr matrix and self corr will be 1
+# results_lme_metabo <- data.frame(matrix(nrow=(ncol(metabo_df)^2 - ncol(metabo_df))/2,
+#                                        ncol=5))
+# names(results_lme_metabo) <- c("feature_1", "feature_2", "p", "beta", "max_influence")
+# 
+# ptm <- proc.time()
+# y_lme <- foreach(i=1:ncol(metabo_df),
+#              .combine=cbind,
+#              .options.snow = opts) %:%
+#     foreach(j=1:ncol(metabo_df),
+#             .combine=cbind,
+#             .options.snow = opts) %dopar% {
+#                 if(j>i){
+#                     feature_1 <- names(metabo_df)[[i]]
+#                     feature_2 <- names(metabo_df)[[j]]
+# 
+#                     run_lme_within(feature_1, feature_2,
+#                                    scale_features = T)
+# 
+#                 }
+#             }
+# print(paste0((proc.time() - ptm)[["elapsed"]]/60, " minutes"))
+# 
+# #stop cluster
+# stopCluster(cl)
+# 
+# results_lme_metabo$feature_1 <- unlist(y_lme[1,])
+# results_lme_metabo$feature_2 <- unlist(y_lme[2,])
+# results_lme_metabo$p <- unlist(y_lme[3,])
+# results_lme_metabo$beta <- unlist(y_lme[4,])
+# results_lme_metabo$max_influence <- unlist(y_lme[5,])
+# 
+# results_lme_within <- rbind(results_lme_genus, results_lme_metabo)
+# 
+# 
+# write.csv(results_lme_within, "/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
 
 results_lme_within <- fread("/Users/johnsterrett/Research-Projects/Reisdorph/GT-micro-metabo/analysis/microbe_metabolite_lme_within_results.csv")
 
@@ -1155,13 +1167,15 @@ p <- ggplot(heatmap_df_long %>%
                 alpha=(1-p)^(1/10),
                 shape=p<0.05) ) + 
     geom_point() + 
-    #scale_x_discrete() +
     theme_minimal() +
-    theme(axis.text.x = element_text(size=8, 
+    theme(legend.text=element_text(size=10),
+          axis.text.x=element_text(size=12, 
                                      angle = 45, 
                                      hjust=1, 
                                      vjust=1),
-          axis.text.y = element_text(size=8)) +
+          axis.title.x=element_text(size=12),
+          axis.text.y=element_text(size=12),
+          axis.title.y=element_text(size=12)) +
     ylab("Microbe") +
     xlab("Metabolite") +
     scale_color_gradient2(midpoint=0,
