@@ -51,6 +51,7 @@ unique(colSums(genus))
 genus <- t(genus) %>% as.data.frame()
 
 
+
 # read in metadata
 metadata <- fread("../metadata/mapping.tsv", sep = "\t")
 rownames(metadata) <- metadata$`MetaboSampleID`
