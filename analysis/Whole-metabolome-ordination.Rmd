@@ -37,7 +37,7 @@ get_sample_group <- function(sample_id,
   
   group <- metadata[metadata$MetaboSampleID==sample_id, metadata_column]
   if (group=="Control"){
-    return ("Germ free")
+    return ("Low complexity")
   } else {
     return ("Humanized")
   }
