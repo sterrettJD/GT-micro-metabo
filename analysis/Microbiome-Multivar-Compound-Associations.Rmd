@@ -266,7 +266,7 @@ p <- EnhancedVolcano::EnhancedVolcano(toptable=adonis_df, x="lfc_hu_vs_gf", y="p
                                  lab=gsub(pattern="\\.[0-9]$", replacement="", 
                                           adonis_df$compound_clean, perl=T), 
                                  ylim=1e-4, pCutoff=1e-2,
-                                 xlim=c(-7, 7), xlab=expression(Log[2](HU/GF)),
+                                 xlim=c(-7, 7), xlab=expression(Log[2](HU/LCM)),
                                  title=NULL, subtitle=NULL,
                                  drawConnectors=TRUE, arrowheads=F)
 p
