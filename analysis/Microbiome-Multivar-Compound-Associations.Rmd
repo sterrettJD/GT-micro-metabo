@@ -642,6 +642,11 @@ get_global_balance_r2 <- function(selbal_res){
     cor(mod$fitted, mod$y)^2
 }
 
+get_global_balance_glm_p <- function(selbal_res){
+    coef(summary(selbal_res$glm))["V1","Pr(>|t|)"]
+
+}
+
 all_selbals <- data.frame(matrix(nrow=0, ncol=6))
 colnames(all_selbals) <- c("compound", "compound_abundance", 
                            "balance_values",
@@ -661,6 +666,8 @@ for (compound in adonis_df[adonis_df$p < 0.01, "compound"]){
     balance_values <- get_balance_vals(selbal_res)
     r2 <- get_global_balance_r2(selbal_res)
     
+    glm_p <- get_global_balance_glm_p(selbal_res)
+    
     res <- data.frame(
                compound=rep(compound, length(balance_values)),
                compound_abundance=gt_compounds_uniquenames[,compound],
@@ -670,10 +677,18 @@ for (compound in adonis_df[adonis_df$p < 0.01, "compound"]){
                balance_num=global_balance[global_balance$Group=="NUM", "Taxa"],
                balance_den=global_balance[global_balance$Group=="DEN", "Taxa"],
                
-               r2=rep(r2, length(balance_values))
+               r2=rep(r2, length(balance_values)),
+               glm_p=rep(glm_p, length(balance_values))
                )
     all_selbals <- rbind(all_selbals, res)
 }
+
+all_selbals %>% group_by(compound) %>%
+    dplyr::summarise(glm_p=first(glm_p)) %>%
+    mutate(glm_p_adj=p.adjust(glm_p, method="fdr"))
+
+p.adjust(unique(all_selbals$glm_p))
+
 
 all_selbals$compound <- str_replace_all(all_selbals$compound, z_pattern, "")
 
