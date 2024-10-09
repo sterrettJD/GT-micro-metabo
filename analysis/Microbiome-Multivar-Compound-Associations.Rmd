@@ -687,8 +687,6 @@ all_selbals %>% group_by(compound) %>%
     dplyr::summarise(glm_p=first(glm_p)) %>%
     mutate(glm_p_adj=p.adjust(glm_p, method="fdr"))
 
-p.adjust(unique(all_selbals$glm_p))
-
 
 all_selbals$compound <- str_replace_all(all_selbals$compound, z_pattern, "")
 
