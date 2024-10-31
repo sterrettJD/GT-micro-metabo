@@ -713,22 +713,22 @@ p <- ggplot(all_selbals, mapping=aes(x=balance_values, y=compound_abundance)) +
     geom_point(size=3) +
     geom_smooth(method="lm") +
     geom_text(mapping = aes(label = ifelse(is.na(balance_num), "", paste0("  Num: ", balance_num))),
-            x=-Inf, y=Inf, hjust=0, vjust=1.2, size=3, na.rm=T) +
+            x=-Inf, y=Inf, hjust=0, vjust=1.2, size=3.5, na.rm=T) +
     geom_text(mapping = aes(label = ifelse(is.na(balance_den), "", paste0("  Den: ", balance_den))),
-            x=-Inf, y=Inf, hjust=0, vjust=2.3, size=3, na.rm=T) +
+            x=-Inf, y=Inf, hjust=0, vjust=2.3, size=3.5, na.rm=T) +
     scale_y_continuous(labels=function(x){scales::scientific(x, digits=1)}) +
     theme_bw() +
-    facet_wrap(~facet_name, scales="free", ncol=4) +
+    facet_wrap(~facet_name, scales="free", ncol=2) +
     labs(x="Balance", y="Compound abundance") +
-    theme(strip.text.x=element_text(size=10),
+    theme(strip.text.x=element_text(size=12),
           axis.title.x=element_text(size=16),
           axis.text.x=element_text(size=14),
           axis.text.y=element_text(size=14),
           axis.title.y=element_text(size=16))
 
 p
-ggsave("../figures/selbal_compounds.pdf", plot=p, height=6, width = 14)
-ggsave("../figures/selbal_compounds.png", plot=p, height=6, width = 14)
+ggsave("../figures/selbal_compounds.pdf", plot=p, height=10, width = 8)
+ggsave("../figures/selbal_compounds.png", plot=p, height=10, width = 8)
 
 ```
 
